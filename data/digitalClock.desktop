@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=digitalClock
+Comment=The time in digits, in the Motif look
+Exec=digitalClock
+Icon=preferences-system-time
+Terminal=false
+Categories=Utility;Clock;
