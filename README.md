@@ -65,23 +65,18 @@ With Alt or Super held no key acts.
 
 | Variable | Default | |
 |---|---|---|
-| `CLOCK_FORMAT` | `%H:%M` | the time, as for `strftime`, e.g. `%H:%M:%S` |
+| `CLOCK_FORMAT` | `%H:%M` | the time, as for `strftime`, e.g. `%H:%M:%S`; with letters it is sized for their accents and descenders |
 | `CLOCK_DATE` | `%a %d.%m.` | the date; empty for none |
-| `CLOCK_FONT` | `Sans 10` | Pango font name, as `DC_FONT` and `SC_FONT` of the sisters |
+| `CLOCK_FONT` | `Sans 10` | the date's Pango font, as `DC_FONT` and `SC_FONT` of the sisters; its size sets the window's height, the time is the same font, larger |
 | `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background, border with the keyboard |
-
-`CLOCK_FONT` is the date's font, and its size sets the window's height as in the
-sisters. The time is the same font, larger. A time format with letters is sized for
-their accents and descenders. Names of days and months follow `LC_TIME`, the zone
-`TZ`.
+| `LC_TIME`, `TZ` | | names of days and months, the zone |
 
 
 ## How this is built
 
 digitalClock is developed with Claude (Anthropic) as a coding assistant. I set the
-scope and review the changes; Claude writes most of the code and the tests. `make
-test` drives the clock in a headless mwc and checks it in screenshots. What is open is
-written down in CAVEATS.
+scope and review the changes; Claude writes most of the code and the tests. What is
+open is written down in CAVEATS.
 
 
 ## Testing
@@ -89,7 +84,7 @@ written down in CAVEATS.
     make test
 
 runs digitalClock in the dock of a headless mwc beside deskControl and pulseControl
-and checks its border and focus, the height against both, the digits, the date, that
+and checks in screenshots its border and focus, the height against both, the digits, the date, that
 it ticks, a format with letters, and the keys. It needs a built mwc with
 `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default `../mwc`),
 grim, and the sisters built next to this directory; without them set
