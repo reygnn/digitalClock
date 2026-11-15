@@ -191,6 +191,45 @@ check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
 quit_clock
 echo "ok: and it quits"
 
+# ---- contrast ----------------------------------------------------------------------------
+
+# On a mid-tone such as mwc's activeBackground black reads better than white: the
+# digits are black and nothing in the field is white.
+MWC_INACTIVE=$SEL CLOCK_FORMAT=%H:%M start_clock
+for ((i = 0; i < 30; i++)); do
+	shoot && n=$(ink) &&
+		white=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) ffffff) &&
+		[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && break
+	sleep 0.1
+done
+[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "on $SEL: $n black, $white white pixels"; }
+echo "ok: black digits on a mid-tone"
+do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+do_input click left
+check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+quit_clock
+
+# ---- a scaled output ---------------------------------------------------------------------
+
+# At scale 2 it draws twice the pixels: the first one of the face beside the bevel is
+# the face's colour, not a blend of the two from a buffer scaled up.
+echo 'Mwm*HEADLESS-1*outputScale: 2' >>"$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is scaled" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
+start_clock
+sharp=
+for ((i = 0; i < 30; i++)); do
+	shoot && sharp=$(build/pngtool pixel "$SHOT" $((2 * (X0 + 2))) $((2 * (Y0 + CH / 2))))
+	[ "$sharp" = $BG ] && break
+	sleep 0.1
+done
+[ "$sharp" = $BG ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	fail "at scale 2 the face beside the bevel is $sharp, not $BG (screenshot in $ERR_SHOT)"; }
+echo "ok: sharp at scale 2"
+kill "$PID_ck"
+wait "$PID_ck" 2>/dev/null
+
 VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/version.h")
 [ "$("$CK" -v)" = "digitalClock $VERSION" ] || fail "-v: $("$CK" -v)"
 echo "ok: -v prints the version"
