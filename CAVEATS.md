@@ -11,13 +11,18 @@ clock restarts.
 deskControl is one row high with a single desktop and then no longer matches the
 clock and pulseControl in the dock; from two desktops on it is two rows, as they are.
 
-It draws at the integer scale the compositor asks for with wl_compositor 6. A
-fractional scale is drawn at the next integer and scaled down by the compositor; an
-older compositor never asks, and there the window stays at scale 1 and is blurred.
+It needs wl_compositor 4. It draws at the integer scale the compositor asks for with
+wl_compositor 6. A fractional scale is drawn at the next integer and scaled down by
+the compositor; a compositor with wl_compositor 4 or 5 never asks, and there the
+window stays at scale 1 and is blurred.
 
-The cursor is loaded from the theme at its size times the scale. When the theme's
-nearest size is no multiple of the scale, it is shown at the largest scale below that
-divides it, and so a little larger.
+The cursor is loaded from the theme at its size times the scale, the theme's nearest
+size. When that is no multiple of the scale, it is shown at the largest scale below
+that divides it, and so a little larger; when the theme has nothing that large, it
+is smaller. `XCURSOR_SIZE` above 512 counts as unset.
+
+It binds the first seat. A seat removed and added again is not taken up until the
+clock restarts.
 
 
 ## Text

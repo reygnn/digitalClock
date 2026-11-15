@@ -105,7 +105,7 @@ static struct wl_cursor_image *cursor_img;
 static int cursor_scale;         /* the scale the theme was loaded for */
 static uint32_t ptr_serial;     /* the last enter's, for set_cursor */
 static int ptr_in;              /* the pointer is on the window */
-static void cursor_load(void);
+static void cursor_update(void);
 static void cursor_show(void);
 
 static struct wl_keyboard *keyboard;
@@ -231,11 +231,30 @@ static float linear(unsigned c)
 /* Black or white, whichever has the higher WCAG contrast on bg. The two are equal
  * at a relative luminance of sqrt(1.05 * 0.05) - 0.05, a grey of about 0x76: a
  * mid-tone such as mwc's activeBackground gets black. */
+static float luminance(uint32_t c)
+{
+	return 0.2126f * linear((c >> 16) & 0xff) + 0.7152f * linear((c >> 8) & 0xff) +
+		0.0722f * linear(c & 0xff);
+}
+
 static uint32_t contrast(uint32_t bg)
 {
-	float l = 0.2126f * linear((bg >> 16) & 0xff) + 0.7152f * linear((bg >> 8) & 0xff) +
-		0.0722f * linear(bg & 0xff);
+	float l = luminance(bg);
 	return (l + 0.05f) * (l + 0.05f) > 1.05f * 0.05f ? 0x000000 : 0xffffff;
+}
+
+/* The date's colour: dimmed towards fg as the sisters' labels are, but no further
+ * than WCAG AA's 4.5:1 for small text allows; fg itself if even that falls short. */
+static uint32_t dimmed(uint32_t bg, uint32_t fg)
+{
+	float lb = luminance(bg) + 0.05f;
+	for (int k = 12; k < 20; k++) {
+		uint32_t c = mix(bg, fg, k / 20.0f);
+		float lc = luminance(c) + 0.05f;
+		if ((lb > lc ? lb / lc : lc / lb) >= 4.5f)
+			return c;
+	}
+	return fg;
 }
 
 /* What mwc reads: "#rrggbb", names like "gold", and rgb:r/g/b with 1 to 4 hex
@@ -249,14 +268,15 @@ static int parse_color(const char *s, uint32_t *out)
 		uint32_t rgb = 0;
 		s += 4;
 		for (int i = 0; i < 3; i++) {
-			char *end;
-			unsigned long v = strtoul(s, &end, 16);
-			int digits = end - s;
-			if (digits < 1 || digits > 4 || *end != (i < 2 ? '/' : '\0'))
+			/* Only hex digits, as mwc: strtoul alone also takes spaces,
+			 * signs and 0x. */
+			int digits = strspn(s, "0123456789abcdefABCDEF");
+			if (digits < 1 || digits > 4 || s[digits] != (i < 2 ? '/' : '\0'))
 				return 0;
+			unsigned long v = strtoul(s, NULL, 16);
 			unsigned long max = (1ul << (4 * digits)) - 1;
 			rgb = rgb << 8 | (v * 255 + max / 2) / max;
-			s = end + 1;
+			s += digits + 1;
 		}
 		*out = rgb;
 		return 1;
@@ -336,7 +356,7 @@ static void theme_init(void)
 	px_bot = mix(bg, 0x000000, 0.5f);
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
 	xc_fg = contrast(bg);
-	xc_dim = mix(bg, xc_fg, 0.6f);
+	xc_dim = dimmed(bg, xc_fg);
 
 	const char *f = getenv("CLOCK_FONT");
 	PangoFontDescription *desc =
@@ -390,20 +410,29 @@ static void theme_init(void)
 
 /* ---- the time ------------------------------------------------------------ */
 
-/* tm in format f as one line of UTF-8; "" if it makes none. */
-static void format_tm(const struct tm *tm, const char *f, char *out, size_t n)
+/* tm in format f as one line of UTF-8 in out[MAX_TEXT]; "" if it makes none. Too
+ * long, it says so once per *warned. */
+static void format_tm(const struct tm *tm, const char *f, char *out, int *warned)
 {
-	static int warned;
+	size_t n = MAX_TEXT;
 	out[0] = 0;
 	if (!tm || !*f)
 		return;
 	if (!strftime(out, n, f, tm)) {
-		/* 0 is also an empty result, as %p in some locales: warn only when
-		 * it does not fit. */
-		char big[4 * MAX_TEXT];
-		if (strftime(big, sizeof big, f, tm) && !warned++)
-			fprintf(stderr, "digitalClock: \"%s\" makes more than %d bytes\n",
-				f, MAX_TEXT - 1);
+		/* 0 is also an empty result, as %p in some locales. With one byte in
+		 * front, only a result that does not fit makes 0. */
+		size_t fl = strlen(f);
+		char *xf = malloc(fl + 2), big[MAX_TEXT + 1];
+		if (xf) {
+			xf[0] = 'x';
+			memcpy(xf + 1, f, fl + 1);
+			if (!strftime(big, sizeof big, xf, tm) && !*warned) {
+				*warned = 1;
+				fprintf(stderr, "digitalClock: \"%s\" makes more than "
+					"%d bytes\n", f, MAX_TEXT - 1);
+			}
+			free(xf);
+		}
 		out[0] = 0;
 		return;
 	}
@@ -441,6 +470,7 @@ static void arm_timer(void)
 
 static void tick(void)
 {
+	static int warned_time, warned_date;
 	char s[MAX_TEXT], d[MAX_TEXT];
 	/* The timer's clock: time() may still say the second before when it fires. */
 	struct timespec ts;
@@ -449,8 +479,8 @@ static void tick(void)
 	struct tm tm, *now;
 	tzset();        /* the zone may have changed since the last tick */
 	now = localtime_r(&t, &tm);
-	format_tm(now, fmt, s, sizeof s);
-	format_tm(now, date_fmt, d, sizeof d);
+	format_tm(now, fmt, s, &warned_time);
+	format_tm(now, date_fmt, d, &warned_date);
 	if (strcmp(s, shown) || strcmp(d, shown_date)) {
 		memcpy(shown, s, sizeof shown);
 		memcpy(shown_date, d, sizeof shown_date);
@@ -678,8 +708,7 @@ static void ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
 {
 	ptr_serial = serial;
 	ptr_in = 1;
-	cursor_load();
-	cursor_show();
+	cursor_update();
 }
 
 static void ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
@@ -741,7 +770,11 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		pointer = wl_seat_get_pointer(s);
 		wl_pointer_add_listener(pointer, &pointer_listener, NULL);
 	} else if (!want_ptr && pointer) {
-		wl_pointer_release(pointer);
+		/* release is from wl_seat 3 on */
+		if (wl_seat_get_version(s) >= 3)
+			wl_pointer_release(pointer);
+		else
+			wl_pointer_destroy(pointer);
 		pointer = NULL;
 		ptr_in = 0;
 	}
@@ -749,7 +782,10 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		keyboard = wl_seat_get_keyboard(s);
 		wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
 	} else if (!want_kb && keyboard) {
-		wl_keyboard_release(keyboard);
+		if (wl_seat_get_version(s) >= 3)
+			wl_keyboard_release(keyboard);
+		else
+			wl_keyboard_destroy(keyboard);
 		keyboard = NULL;
 		focused = 0;    /* in case no leave came first */
 		dirty = 1;
@@ -777,7 +813,8 @@ static const struct xdg_wm_base_listener wm_base_listener = { wm_ping };
 static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	const char *iface, uint32_t ver)
 {
-	if (!strcmp(iface, wl_compositor_interface.name)) {
+	/* damage_buffer needs wl_compositor 4. */
+	if (!strcmp(iface, wl_compositor_interface.name) && ver >= 4) {
 		compositor = wl_registry_bind(r, name, &wl_compositor_interface,
 			MIN(ver, 6));
 	} else if (!strcmp(iface, wl_shm_interface.name)) {
@@ -830,28 +867,47 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	.close = top_close,
 };
 
-/* The theme's cursor at the window's scale, loaded again when that changes. */
-static void cursor_load(void)
+/* XCURSOR_SIZE, or 24 if it is no size; at most 512, so that times the scale
+ * stays an int. */
+static int cursor_size(void)
 {
-	if (cursor_scale == scale)
-		return;
-	if (cursor_theme)
-		wl_cursor_theme_destroy(cursor_theme);
-	cursor_theme = NULL;
-	cursor_img = NULL;
-	cursor_scale = scale;
 	const char *s = getenv("XCURSOR_SIZE");
-	int size = s && atoi(s) > 0 ? atoi(s) : 24;
-	cursor_theme = wl_cursor_theme_load(getenv("XCURSOR_THEME"), size * scale, shm);
-	if (!cursor_theme)
-		return;
-	struct wl_cursor *c = wl_cursor_theme_get_cursor(cursor_theme, "default");
-	if (!c)
-		c = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-	if (c)
-		cursor_img = c->images[0];
-	if (!cursor_surf)
-		cursor_surf = wl_compositor_create_surface(compositor);
+	char *end;
+	if (!s || !*s)
+		return 24;
+	errno = 0;
+	long v = strtol(s, &end, 10);
+	return errno || *end || v < 1 || v > 512 ? 24 : (int)v;
+}
+
+/* The theme's cursor at the window's scale, loaded again when that changes, and
+ * shown if the pointer is on the window. The old theme goes only after the new
+ * cursor is attached: its buffer may still be on cursor_surf. Without a new
+ * cursor the old one stays. */
+static void cursor_update(void)
+{
+	if (cursor_scale != scale) {
+		struct wl_cursor_theme *t = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
+			cursor_size() * scale, shm);
+		struct wl_cursor *c = t ? wl_cursor_theme_get_cursor(t, "default") : NULL;
+		if (t && !c)
+			c = wl_cursor_theme_get_cursor(t, "left_ptr");
+		if (c) {
+			struct wl_cursor_theme *old = cursor_theme;
+			cursor_theme = t;
+			cursor_img = c->images[0];
+			cursor_scale = scale;
+			if (!cursor_surf)
+				cursor_surf = wl_compositor_create_surface(compositor);
+			cursor_show();
+			if (old)
+				wl_cursor_theme_destroy(old);
+			return;
+		}
+		if (t)
+			wl_cursor_theme_destroy(t);
+	}
+	cursor_show();
 }
 
 /* The cursor on the window, if the pointer is there. A theme has only some sizes:
@@ -891,8 +947,7 @@ static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t facto
 	scale = factor;
 	dirty = 1;
 	/* Now, not at the next enter: the pointer may be resting on the window. */
-	cursor_load();
-	cursor_show();
+	cursor_update();
 }
 
 static void surf_preferred_transform(void *data, struct wl_surface *s,
@@ -934,12 +989,13 @@ static void lost_connection(void)
 int main(int argc, char **argv)
 {
 	if (argc > 1) {
-		if (!strcmp(argv[1], "-v")) {
+		if (argc == 2 && !strcmp(argv[1], "-v")) {
 			printf("digitalClock %s\n", DIGITALCLOCK_VERSION);
 			return 0;
 		}
-		int help = !strcmp(argv[1], "-h") || !strcmp(argv[1], "--help");
-		fprintf(stderr, "usage: digitalClock [-v]\n"
+		/* Asked for, the usage goes to stdout, as mwc's. */
+		int help = argc == 2 && !strcmp(argv[1], "-h");
+		fprintf(help ? stdout : stderr, "usage: digitalClock [-v]\n"
 			"Environment: CLOCK_FORMAT (default \"%%H:%%M\"), CLOCK_DATE "
 			"(default \"%%a %%d.%%m.\", empty for none),\n"
 			"CLOCK_FONT (default \"Sans 10\"), MWC_INACTIVE, MWC_ACTIVE.\n");
@@ -971,11 +1027,11 @@ int main(int argc, char **argv)
 	if (wl_display_roundtrip(dpy) < 0)
 		lost_connection();
 	if (!compositor || !shm || !wm_base) {
-		fprintf(stderr, "digitalClock: the compositor lacks wl_compositor, wl_shm "
-			"or xdg_wm_base\n");
+		fprintf(stderr, "digitalClock: the compositor lacks wl_compositor 4, "
+			"wl_shm or xdg_wm_base\n");
 		return 1;
 	}
-	cursor_load();
+	cursor_update();
 	tick();         /* theme_init looks at the text */
 	theme_init();
 	arm_timer();
@@ -1008,8 +1064,8 @@ int main(int argc, char **argv)
 				pfd[0].events |= POLLOUT;
 		}
 		if (poll(pfd, 2, -1) < 0 && errno != EINTR) {
-			wl_display_cancel_read(dpy);
-			lost_connection();
+			fprintf(stderr, "digitalClock: poll: %s\n", strerror(errno));
+			exit(1);
 		}
 		if (pfd[0].revents & (POLLIN | POLLERR | POLLHUP)) {
 			if (wl_display_read_events(dpy) < 0)

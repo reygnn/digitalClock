@@ -38,7 +38,8 @@ ERR_SHOT=$CK_DIR/build/ui-last.png
 BG=aeb2c3      # Motif's default background: the frame without the keyboard
 SEL=7387ad     # activeBackground: the frame with the keyboard
 INK=000000     # the digits on Motif's default background
-DIM=46474e     # the date: the background mixed 60 % towards the ink
+DIM=3d3e44     # the date: dimmed towards the ink as far as WCAG AA's 4.5:1 allows
+SEL_DIM=171b23 # ... and on activeBackground, where that takes more
 IN=$((3 + 6 + 2))       # frame, padding, the field's bevel
 
 mkdir -p "$XDG_CONFIG_HOME/mwc"
@@ -58,7 +59,9 @@ where() {
 }
 ink() { count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) $INK; }
 # The strip along the field's bottom where the date is, and only the date.
-strip() { count $((X0 + IN)) $((Y0 + CH - IN - 16)) $((CW - 2 * IN)) 16 "$1"; }
+strip() { count $((X0 + IN)) $((Y0 + CH - IN - 16)) $((CW - 2 * IN)) 16 "$@"; }
+# The date's own colour, nearly exact: count's tolerance would take the old one too.
+DATE_TOL=6
 frame_is() { # description rrggbb
 	local got= i
 	for ((i = 0; i < 30; i++)); do
@@ -73,18 +76,17 @@ start_clock() {
 	WAYLAND_DISPLAY=wayland-0 "$CK" >>"$CK_LOG" 2>&1 &
 	PID_ck=$!
 	check "digitalClock is mapped" "[ -n \"\$(get digitalClock x)\" ]"
-	sleep 0.3
 	refresh
 	where
 }
-quit_clock() {
-	local i
-	do_input key q
+quit_clock() { # [key]
+	local i key=${1:-q}
+	do_input key "$key"
 	for ((i = 0; i < 50; i++)); do
 		kill -0 "$PID_ck" 2>/dev/null || break
 		sleep 0.1
 	done
-	kill -0 "$PID_ck" 2>/dev/null && fail "q doesn't quit"
+	kill -0 "$PID_ck" 2>/dev/null && fail "$key doesn't quit"
 	wait "$PID_ck"
 	[ $? = 0 ] || fail "digitalClock didn't exit with 0"
 	check "it is gone" "[ -z \"\$(get digitalClock x)\" ]"
@@ -129,9 +131,9 @@ done
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "no digits: $first ink pixels"; }
 echo "ok: digits in the field ($first ink pixels)"
 # The date below them, dimmed: grey in its strip, and none of the digits' black.
-date=$(strip $DIM) black=$(strip $INK)
-[ "${date:-0}" -gt 20 ] && [ "${black:-1}" = 0 ] ||
-	{ cp "$SHOT" "$ERR_SHOT"; fail "the date strip: $date grey, $black black pixels"; }
+date=$(strip $DIM $DATE_TOL) black=$(strip $INK)
+[ "${date:-0}" -gt 8 ] && [ "${black:-1}" = 0 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "the date strip: $date grey, $black black pixels"; }
 echo "ok: the date below the time ($date pixels)"
 # A change with digits still there, and the clock still running: not a crash.
 for ((i = 0; i < 40; i++)); do
@@ -139,7 +141,7 @@ for ((i = 0; i < 40; i++)); do
 	shoot && n=$(ink) && [ "${n:-0}" -gt 50 ] && [ "$n" != "$first" ] && break
 	sleep 0.1
 done
-[ "${n:-0}" -gt 50 ] && [ "$n" != "$first" ] || { cp "$SHOT" "$ERR_SHOT"; fail "it doesn't tick"; }
+[ "${n:-0}" -gt 50 ] && [ "$n" != "$first" ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "it doesn't tick"; }
 echo "ok: it ticks"
 
 # ---- the frame ---------------------------------------------------------------------------
@@ -164,11 +166,22 @@ do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
 do_input click left
 check "digitalClock has the focus again" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
 do_input key alt+q
-sleep 0.3
-kill -0 "$PID_ck" 2>/dev/null || fail "Alt+Q quits"
+# Not gone within a second: what q takes is a tenth of that.
+for ((i = 0; i < 10; i++)); do
+	kill -0 "$PID_ck" 2>/dev/null || fail "Alt+Q quits"
+	sleep 0.1
+done
 echo "ok: Alt+Q does not quit"
 quit_clock
 echo "ok: q quits"
+for key in Escape ctrl+q ctrl+w; do
+	start_clock
+	do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+	do_input click left
+	check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+	quit_clock $key
+	echo "ok: $key quits"
+done
 
 # ---- letters ---------------------------------------------------------------------------
 
@@ -180,11 +193,13 @@ for ((i = 0; i < 30; i++)); do
 	sleep 0.1
 done
 [ "${n:-0}" -gt 50 ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "no letters: $n ink pixels"; }
-# The field's top bevel and the strip above it, and the date's strip.
-bevel=$(count $((X0 + IN)) $((Y0 + 3 + 6)) $((CW - 2 * IN)) 2 $INK)
+# The field's top rows inside its bevel, where the text is clipped: an accent cut
+# off there would leave ink, so they are all face. And the date's strip.
+top=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) 2 $BG)
 black=$(strip $INK)
-[ "$bevel" = 0 ] && [ "$black" = 0 ] ||
-	{ cp "$SHOT" "$ERR_SHOT"; fail "letters: $bevel on the bevel, $black on the date"; }
+[ "$top" = $((2 * (CW - 2 * IN))) ] && [ "$black" = 0 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	  fail "letters: $top of $((2 * (CW - 2 * IN))) face pixels at the top, $black on the date"; }
 echo "ok: letters stay in the field and off the date"
 do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
 do_input click left
@@ -195,21 +210,43 @@ echo "ok: and it quits"
 # ---- contrast ----------------------------------------------------------------------------
 
 # On a mid-tone such as mwc's activeBackground black reads better than white: the
-# digits are black and nothing in the field is white.
+# digits are black and nothing in the field is white. The date is darker than on
+# the default background, to keep 4.5:1.
 MWC_INACTIVE="#$SEL" CLOCK_FORMAT=%H:%M start_clock
 for ((i = 0; i < 30; i++)); do
 	shoot && n=$(ink) &&
 		white=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) ffffff) &&
-		[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && break
+		date=$(strip $SEL_DIM $DATE_TOL) &&
+		[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && [ "${date:-0}" -gt 8 ] && break
 	sleep 0.1
 done
-[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] ||
-	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "on $SEL: $n black, $white white pixels"; }
-echo "ok: black digits on a mid-tone"
+[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && [ "${date:-0}" -gt 8 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	  fail "on $SEL: $n black, $white white, $date $SEL_DIM pixels"; }
+echo "ok: black digits on a mid-tone, the date in $SEL_DIM"
 do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
 do_input click left
 check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
 quit_clock
+
+# rgb: takes hex digits only, as mwc does: a sign is no colour, and the default
+# stays, as in mwc's frames.
+MWC_INACTIVE=rgb:-1/0/0 start_clock
+frame_is "rgb:-1/0/0 is no colour" $BG
+do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+do_input click left
+check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+quit_clock
+
+# A format too long says so, the time and the date each, also beyond 1023 bytes.
+long=$SMOKE_DIR/long.log
+CLOCK_FORMAT=$(printf 'a%.0s' {1..300}) CLOCK_DATE=$(printf 'b%.0s' {1..2000}) \
+	WAYLAND_DISPLAY=wayland-0 "$CK" >"$long" 2>&1 &
+PID_long=$!
+check "a long time and a long date warn" \
+	"[ \"\$(grep -c 'makes more than 255 bytes' \"$long\")\" = 2 ]"
+kill "$PID_long" 2>/dev/null
+wait "$PID_long" 2>/dev/null
 
 # ---- a scaled output ---------------------------------------------------------------------
 
@@ -264,6 +301,10 @@ wait "$PID_ck" 2>/dev/null
 VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/version.h")
 [ "$("$CK" -v)" = "digitalClock $VERSION" ] || fail "-v: $("$CK" -v)"
 echo "ok: -v prints the version"
+"$CK" -v junk >/dev/null 2>&1 && fail "-v junk exits with 0"
+echo "ok: -v with more is a usage error"
+"$CK" -h 2>/dev/null | grep -q '^usage: digitalClock' || fail "-h: no usage on stdout"
+echo "ok: -h prints the usage on stdout"
 
 for p in $PIDS_sisters; do
 	kill "$p" 2>/dev/null

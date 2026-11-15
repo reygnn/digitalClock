@@ -12,7 +12,7 @@ Test inside mwc's `mwc-dev` distrobox; the host lacks grim.
 | Target | |
 |---|---|
 | `make` | digitalClock, one C file (`clock.c`) |
-| `make test` | `tests/ui.sh`: the clock in a headless mwc's dock, checked in screenshots; log in `build/ui.log`, the clock's own in `build/ui-digitalClock.log` |
+| `make test` | `tests/ui.sh`: the clock in a headless mwc's dock, checked in screenshots; log in `build/ui.log`, the clock's own in `build/ui-digitalClock.log`, the sisters' in `build/ui-sisters.log`, a failure's screenshot in `build/ui-last.png` |
 
 `make test` needs a built mwc with `build/vinput`, `build/pngtool` and `build/xdgc`
 in `MWC_DIR` (default `../mwc`) and deskControl and pulseControl built next to this

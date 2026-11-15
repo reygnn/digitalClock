@@ -33,15 +33,16 @@ and in `~/.config/mwc/autostart`:
 The order of the `dock` lines is the order in the dock; with the default
 `dockPlacement`, `right bottom`, the first one sits in the corner.
 
-`-v` prints the version, which is set in `version.h`.
+`-v` prints the version, which is set in `version.h`; `-h` the usage.
 
 
 ## Look
 
 The time sits in a sunken field, as large as the field allows, the date below it in
-the smaller font, dimmed. The window is as high as deskControl and pulseControl with
-the same font, so the three line up in the dock. It is as wide as its text and grows
-when the text does, but never shrinks, so the dock does not move every minute.
+the smaller font, dimmed as far as a contrast of 4.5:1 allows. The window is as high
+as deskControl and pulseControl with the same font, so the three line up in the dock.
+It is as wide as its text and grows when the text does, but never shrinks, so the
+dock does not move every minute.
 
 It draws only mwm's thin border, no title bar, buttons or resize handles. The border
 takes the active colour while the clock has the keyboard. The colours are mwc's:
@@ -84,10 +85,14 @@ open is written down in CAVEATS.
     make test
 
 runs digitalClock in the dock of a headless mwc beside deskControl and pulseControl
-and checks in screenshots its border and focus, the height against both, the digits, the date, that
-it ticks, a format with letters, and the keys. It needs a built mwc with
-`build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default `../mwc`),
-grim, and the sisters built next to this directory; without them set
+and checks in screenshots its border and focus, the height against both, the digits,
+the date and its contrast, that it ticks, a format with letters, the colours it reads,
+the keys, the cursor and sharpness on a scaled output, and `-v`. It needs a built
+mwc with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default
+`../mwc`), grim, and the sisters built next to this directory; without them set
 `SKIP_SISTERS=1`. mwc's development box has all of it:
 
-    distrobox enter mwc-dev -- make test
+    distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/mClock && make test'
+
+The log is in `build/ui.log`, the clock's own in `build/ui-digitalClock.log`, the
+sisters' in `build/ui-sisters.log`, a failure's screenshot in `build/ui-last.png`.
