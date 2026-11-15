@@ -324,6 +324,13 @@ cursor_kept() {
 		if (cur != "" && att[cur] == f[2]) print f[2]
 	}' "$WL_LOG"
 }
+# A size past LONG_MAX is the largest, 256, as in the other docks: Adwaita's 96.
+XCURSOR_THEME=Adwaita XCURSOR_SIZE=99999999999999999999 start_clock
+do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+check "XCURSOR_SIZE past LONG_MAX gives the largest cursor" "cursor; [ \"\${CW_:-0}\" = 96 ]"
+do_input click left
+check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+quit_clock
 sed -i 's/dockPlacement: right bottom$/dockPlacement: left top/' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 CK_LOG=$WL_LOG WAYLAND_DEBUG=client XCURSOR_THEME=Adwaita XCURSOR_SIZE=7 start_clock

@@ -900,14 +900,13 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 };
 
 /* XCURSOR_SIZE, 24 if unset or bad, at most 256: times the scale it must not
- * overflow. */
+ * overflow. A number past LONG_MAX is the largest too, as in the other docks. */
 static int cursor_size(void)
 {
 	const char *s = getenv("XCURSOR_SIZE");
 	char *end;
-	errno = 0;
 	long v = s ? strtol(s, &end, 10) : 0;
-	if (!s || end == s || *end || errno || v <= 0)
+	if (!s || end == s || *end || v <= 0)
 		return 24;
 	return v > 256 ? 256 : (int)v;
 }
