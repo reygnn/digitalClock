@@ -15,6 +15,7 @@ CK_LOG=$CK_DIR/build/ui-digitalClock.log
 MWC_DIR=${MWC_DIR:-$CK_DIR/../mwc}
 DESK=${DESK:-$CK_DIR/../deskControl/deskControl}
 PULSE=${PULSE:-$CK_DIR/../pulseControl/pulseControl}
+SKIP_SISTERS=${SKIP_SISTERS:-0}   # lib.sh sets -u
 [ -x "$CK" ] || { echo "FAIL: $CK not built"; exit 1; }
 [ -d "$MWC_DIR" ] || { echo "FAIL: no mwc in $MWC_DIR (set MWC_DIR)"; exit 1; }
 mkdir -p "$CK_DIR/build"
@@ -212,12 +213,30 @@ quit_clock
 
 # ---- a scaled output ---------------------------------------------------------------------
 
+# The pointer rests on the clock while the scale changes: its cursor follows at once,
+# without a new enter, and its buffer is one the scale divides.
+# The dock top left, so that the pointer stays on the clock when the output shrinks.
+# Adwaita has cursors of 24, 30, 36, 48, 72 and 96 pixels; at size 7 the clock gets
+# 24 at scales 1 and 2, and 30 at scale 4, which 4 doesn't divide.
+cursor() { refresh; CW_=$(global cursor cw) CH_=$(global cursor ch) CS_=$(global cursor cscale); }
+sed -i 's/dockPlacement: right bottom$/dockPlacement: left top/' "$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+XCURSOR_THEME=Adwaita XCURSOR_SIZE=7 start_clock
+do_input move $((X0 + 20)) $((Y0 + 20))
+check "the clock's cursor at scale 1" \
+	"cursor; [ \"\$CS_\" = 1 ] && [ \"\${CW_:-0}\" -gt 0 ]"
+echo "ok: its cursor, ${CW_}x$CH_ at scale 1"
+
 # At scale 2 it draws twice the pixels: the first one of the face beside the bevel is
 # the face's colour, not a blend of the two from a buffer scaled up.
 echo 'Mwm*HEADLESS-1*outputScale: 2' >>"$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is scaled" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
-start_clock
+check "the cursor follows the scale without a new enter" \
+	"cursor; [ \"\$CS_\" = 2 ]"
+echo "ok: its cursor, ${CW_}x$CH_ at scale 2"
+refresh
+where
 sharp=
 for ((i = 0; i < 30; i++)); do
 	shoot && sharp=$(build/pngtool pixel "$SHOT" $((2 * (X0 + 2))) $((2 * (Y0 + CH / 2))))
@@ -227,6 +246,18 @@ done
 [ "$sharp" = $BG ] || { cp "$SHOT" "$ERR_SHOT" 2>/dev/null
 	fail "at scale 2 the face beside the bevel is $sharp, not $BG (screenshot in $ERR_SHOT)"; }
 echo "ok: sharp at scale 2"
+
+# At scale 4 the theme's 30 pixels are no multiple of 4: the cursor's buffer scale
+# must divide its size, or a compositor may end the client with invalid_size. First
+# the new cursor, then its scale.
+sed -i 's/outputScale: 2$/outputScale: 4/' "$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is at scale 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
+check "the cursor is loaded for scale 4" "cursor; [ \"\${CW_:-0}\" = 30 ]"
+[ "$CS_" -gt 0 ] && [ $((CW_ % CS_)) = 0 ] && [ $((CH_ % CS_)) = 0 ] ||
+	fail "a cursor of ${CW_}x$CH_ at buffer scale $CS_"
+echo "ok: its cursor, ${CW_}x$CH_ at buffer scale $CS_"
+kill -0 "$PID_ck" 2>/dev/null || fail "digitalClock died at scale 4"
 kill "$PID_ck"
 wait "$PID_ck" 2>/dev/null
 

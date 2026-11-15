@@ -102,8 +102,11 @@ static struct wl_pointer *pointer;
 static struct wl_surface *cursor_surf;
 static struct wl_cursor_theme *cursor_theme;
 static struct wl_cursor_image *cursor_img;
-static int cursor_scale;
+static int cursor_scale;         /* the scale the theme was loaded for */
+static uint32_t ptr_serial;     /* the last enter's, for set_cursor */
+static int ptr_in;              /* the pointer is on the window */
 static void cursor_load(void);
+static void cursor_show(void);
 
 static struct wl_keyboard *keyboard;
 static struct xkb_context *xkb;
@@ -673,21 +676,16 @@ static const struct wl_keyboard_listener keyboard_listener = {
 static void ptr_enter(void *data, struct wl_pointer *p, uint32_t serial,
 	struct wl_surface *s, wl_fixed_t x, wl_fixed_t y)
 {
+	ptr_serial = serial;
+	ptr_in = 1;
 	cursor_load();
-	if (!cursor_img)
-		return;
-	wl_pointer_set_cursor(p, serial, cursor_surf,
-		cursor_img->hotspot_x / cursor_scale, cursor_img->hotspot_y / cursor_scale);
-	wl_surface_set_buffer_scale(cursor_surf, cursor_scale);
-	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
-	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width,
-		cursor_img->height);
-	wl_surface_commit(cursor_surf);
+	cursor_show();
 }
 
 static void ptr_leave(void *data, struct wl_pointer *p, uint32_t serial,
 	struct wl_surface *s)
 {
+	ptr_in = 0;
 }
 
 static void ptr_motion(void *data, struct wl_pointer *p, uint32_t time,
@@ -745,6 +743,7 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 	} else if (!want_ptr && pointer) {
 		wl_pointer_release(pointer);
 		pointer = NULL;
+		ptr_in = 0;
 	}
 	if (want_kb && !keyboard) {
 		keyboard = wl_seat_get_keyboard(s);
@@ -855,6 +854,26 @@ static void cursor_load(void)
 		cursor_surf = wl_compositor_create_surface(compositor);
 }
 
+/* The cursor on the window, if the pointer is there. A theme has only some sizes:
+ * Adwaita's 64 at scale 3 would be a buffer the scale doesn't divide, which a
+ * compositor may refuse with invalid_size. Then the largest scale below that
+ * divides it, and the cursor is a little larger. */
+static void cursor_show(void)
+{
+	if (!pointer || !ptr_in || !cursor_img)
+		return;
+	int bs = cursor_scale;
+	while (bs > 1 && (cursor_img->width % bs || cursor_img->height % bs))
+		bs--;
+	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf,
+		cursor_img->hotspot_x / bs, cursor_img->hotspot_y / bs);
+	wl_surface_set_buffer_scale(cursor_surf, bs);
+	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
+	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width,
+		cursor_img->height);
+	wl_surface_commit(cursor_surf);
+}
+
 /* Sharp on a scaled output: wl_compositor 6 says which scale the output it is on
  * has. An older compositor never does, and it stays at 1. */
 static void surf_enter(void *data, struct wl_surface *s, struct wl_output *o)
@@ -871,6 +890,9 @@ static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t facto
 		return;
 	scale = factor;
 	dirty = 1;
+	/* Now, not at the next enter: the pointer may be resting on the window. */
+	cursor_load();
+	cursor_show();
 }
 
 static void surf_preferred_transform(void *data, struct wl_surface *s,

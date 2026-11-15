@@ -8,12 +8,16 @@ Limits of digitalClock that are known and left as they are.
 The width only grows: after a long day name the window stays that wide until the
 clock restarts.
 
-deskControl is two rows high only with three or four desktops. With fewer or more it
-no longer matches the clock and pulseControl in the dock.
+deskControl is one row high with a single desktop and then no longer matches the
+clock and pulseControl in the dock; from two desktops on it is two rows, as they are.
 
 It draws at the integer scale the compositor asks for with wl_compositor 6. A
 fractional scale is drawn at the next integer and scaled down by the compositor; an
 older compositor never asks, and there the window stays at scale 1 and is blurred.
+
+The cursor is loaded from the theme at its size times the scale. When the theme's
+nearest size is no multiple of the scale, it is shown at the largest scale below that
+divides it, and so a little larger.
 
 
 ## Text
