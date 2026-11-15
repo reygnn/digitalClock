@@ -358,6 +358,7 @@ echo "ok: sharp at scale 2"
 # must divide its size, or a compositor may end the client with invalid_size. The
 # buffer goes at scale 1, and a viewport shows it at 30 / 4, rounded 8, as large as
 # mwc shows its own cursor.
+FROM=$(($(wc -l <"$WL_LOG") + 1))
 sed -i 's/outputScale: 2$/outputScale: 4/' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is at scale 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
@@ -366,6 +367,13 @@ check "the cursor is loaded for scale 4" "cursor; [ \"\${CW_:-0}\" = 30 ]"
 	fail "a cursor of ${CW_}x$CH_ at buffer scale $CS_"
 echo "ok: its cursor, ${CW_}x$CH_ at buffer scale $CS_"
 check "and a viewport shows it at 8" "[ \"\$(cursor_dest)\" = '8 8' ]"
+# With the pointer on the clock the new cursor replaces the old one: no attach(nil)
+# from the scale change on, which would flicker. One at startup is fine.
+CURSOR_SURF=$(grep -o 'wl_pointer#[0-9]*\.set_cursor([0-9]*, wl_surface#[0-9]*' "$WL_LOG" |
+	tail -1 | sed 's/.*#//')
+tail -n +"$FROM" "$WL_LOG" | grep -q "wl_surface#$CURSOR_SURF\.attach(nil" &&
+	fail "the cursor surface went empty while the pointer was on the clock"
+echo "ok: the cursor is swapped without going empty"
 # The pointer leaves, the scale changes: the cursor isn't shown, and the surface
 # lets go of the old theme's buffer before that goes.
 do_input move 1000 600
