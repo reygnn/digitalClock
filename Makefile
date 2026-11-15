@@ -11,32 +11,34 @@ XDG_SHELL = $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml
 PROTO_H = build/xdg-shell-client-protocol.h
 PROTO_C = build/xdg-shell-protocol.c
 
-# CFLAGS and LDLIBS stay the user's, also on the command line: `make CFLAGS=-O0`
-# must not lose the include paths.
+# CPPFLAGS, CFLAGS, LDFLAGS and LDLIBS stay the user's, also on the command line:
+# `make CFLAGS=-O0` must not lose the include paths.
 CFLAGS ?= -O2 -g
 CK_CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Ibuild \
 	$(shell $(PKG_CONFIG) --cflags $(PKGS))
-CK_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS))
+CK_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS)) -lm
 
 all: digitalClock
 
 digitalClock: clock.c version.h $(PROTO_H) $(PROTO_C)
-	$(CC) $(CK_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ clock.c $(PROTO_C) $(CK_LIBS) $(LDLIBS)
+	$(CC) $(CK_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ clock.c $(PROTO_C) \
+		$(CK_LIBS) $(LDLIBS)
 
 build:
 	mkdir -p build
 
-build/xdg-shell-client-protocol.h: | build
+build/xdg-shell-client-protocol.h: $(XDG_SHELL) | build
 	$(WAYLAND_SCANNER) client-header $(XDG_SHELL) $@
 
-build/xdg-shell-protocol.c: | build
+build/xdg-shell-protocol.c: $(XDG_SHELL) | build
 	$(WAYLAND_SCANNER) private-code $(XDG_SHELL) $@
 
 install: digitalClock
 	install -Dm755 digitalClock $(DESTDIR)$(PREFIX)/bin/digitalClock
-	mkdir -p $(DESTDIR)$(PREFIX)/share/applications
+	install -d $(DESTDIR)$(PREFIX)/share/applications
 	sed 's|^Exec=digitalClock$$|Exec=$(PREFIX)/bin/digitalClock|' data/digitalClock.desktop \
 		>$(DESTDIR)$(PREFIX)/share/applications/digitalClock.desktop
+	chmod 644 $(DESTDIR)$(PREFIX)/share/applications/digitalClock.desktop
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/digitalClock \
