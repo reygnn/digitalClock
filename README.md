@@ -77,8 +77,8 @@ With Alt or Super held no key acts.
 ## How this is built
 
 digitalClock is developed with Claude (Anthropic) as a coding assistant. I set the
-scope and review the changes; Claude writes most of the code and the tests. What is
-open is written down in CAVEATS.
+scope and the design and review the changes; Claude writes most of the code and the
+tests. What is open is written down in CAVEATS.
 
 
 ## Testing
