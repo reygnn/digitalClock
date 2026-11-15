@@ -238,6 +238,51 @@ do_input click left
 check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
 quit_clock
 
+# ---- the mwmrc ---------------------------------------------------------------------------
+
+MWMRC=$XDG_CONFIG_HOME/mwc/mwmrc
+cp "$MWMRC" "$SMOKE_DIR/mwmrc.saved"
+restore_mwmrc() { cp "$SMOKE_DIR/mwmrc.saved" "$MWMRC"; }
+focus_clock() {
+	do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+	do_input click left
+	check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+}
+
+# The text in Mwm*foreground, as mwc's titles, not black.
+FG=800000
+echo "Mwm*foreground: #$FG" >>"$MWMRC"
+start_clock
+for ((i = 0; i < 30; i++)); do
+	shoot && n=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) $FG 6) &&
+		[ "${n:-0}" -gt 50 ] && break
+	sleep 0.1
+done
+[ "${n:-0}" -gt 50 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "Mwm*foreground: $n pixels in $FG"; }
+echo "ok: the digits in Mwm*foreground"
+focus_clock
+quit_clock
+restore_mwmrc
+
+# Whole lines: a comment longer than a line buffer whose rest looks like a setting
+# stays a comment.
+{ printf '!%.0s' {1..511}; echo 'Mwm*activeBackground: #ff0000'; } >>"$MWMRC"
+start_clock
+focus_clock
+frame_is "a long comment line sets nothing" $SEL
+quit_clock
+restore_mwmrc
+
+# The last line wins, as in mwc, and one too long to keep is no value: the default.
+{ echo 'Mwm*activeBackground: #ff0000'; printf 'Mwm*activeBackground: #'
+  printf '0%.0s' {1..300}; echo; } >>"$MWMRC"
+start_clock
+focus_clock
+frame_is "the last activeBackground, too long, leaves the default" $SEL
+quit_clock
+restore_mwmrc
+
 # A format too long says so, the time and the date each, also beyond 1023 bytes.
 long=$SMOKE_DIR/long.log
 CLOCK_FORMAT=$(printf 'a%.0s' {1..300}) CLOCK_DATE=$(printf 'b%.0s' {1..2000}) \
@@ -256,9 +301,32 @@ wait "$PID_long" 2>/dev/null
 # Adwaita has cursors of 24, 30, 36, 48, 72 and 96 pixels; at size 7 the clock gets
 # 24 at scales 1 and 2, and 30 at scale 4, which 4 doesn't divide.
 cursor() { refresh; CW_=$(global cursor cw) CH_=$(global cursor ch) CS_=$(global cursor cscale); }
+# What the clock asks for, from its protocol log.
+WL_LOG=$CK_DIR/build/ui-wayland.log
+: >"$WL_LOG"
+# The last size the cursor's viewport was given, "w h"; -1 -1 is none.
+cursor_dest() {
+	grep -o 'wp_viewport#[0-9]*\.set_destination(-\?[0-9]*, -\?[0-9]*)' "$WL_LOG" | tail -1 |
+		sed 's/.*(\(.*\), \(.*\))/\1 \2/'
+}
+# Buffers destroyed while the cursor surface still showed them: a theme gone too early.
+cursor_kept() {
+	awk '
+	match($0, /wl_pointer#[0-9]+\.set_cursor\([0-9]+, wl_surface#[0-9]+/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#(, ]+/); cur = f[5]
+	}
+	match($0, /wl_surface#[0-9]+\.attach\((wl_buffer#[0-9]+|nil)/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		att[f[2]] = f[4] == "nil" ? "" : f[5]
+	}
+	match($0, /wl_buffer#[0-9]+\.destroy\(\)/) {
+		split(substr($0, RSTART, RLENGTH), f, /[#.()]+/)
+		if (cur != "" && att[cur] == f[2]) print f[2]
+	}' "$WL_LOG"
+}
 sed -i 's/dockPlacement: right bottom$/dockPlacement: left top/' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
-XCURSOR_THEME=Adwaita XCURSOR_SIZE=7 start_clock
+CK_LOG=$WL_LOG WAYLAND_DEBUG=client XCURSOR_THEME=Adwaita XCURSOR_SIZE=7 start_clock
 do_input move $((X0 + 20)) $((Y0 + 20))
 check "the clock's cursor at scale 1" \
 	"cursor; [ \"\$CS_\" = 1 ] && [ \"\${CW_:-0}\" -gt 0 ]"
@@ -272,6 +340,8 @@ check "the output is scaled" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
 check "the cursor follows the scale without a new enter" \
 	"cursor; [ \"\$CS_\" = 2 ]"
 echo "ok: its cursor, ${CW_}x$CH_ at scale 2"
+[ "$(cursor_dest)" = '-1 -1' ] || fail "at scale 2 a viewport of $(cursor_dest)"
+echo "ok: there the scale divides it, and no viewport"
 refresh
 where
 sharp=
@@ -285,8 +355,9 @@ done
 echo "ok: sharp at scale 2"
 
 # At scale 4 the theme's 30 pixels are no multiple of 4: the cursor's buffer scale
-# must divide its size, or a compositor may end the client with invalid_size. First
-# the new cursor, then its scale.
+# must divide its size, or a compositor may end the client with invalid_size. The
+# buffer goes at scale 1, and a viewport shows it at 30 / 4, rounded 8, as large as
+# mwc shows its own cursor.
 sed -i 's/outputScale: 2$/outputScale: 4/' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is at scale 4" "[ \"\$(global output_HEADLESS-1 scale)\" = 400 ]"
@@ -294,6 +365,19 @@ check "the cursor is loaded for scale 4" "cursor; [ \"\${CW_:-0}\" = 30 ]"
 [ "$CS_" -gt 0 ] && [ $((CW_ % CS_)) = 0 ] && [ $((CH_ % CS_)) = 0 ] ||
 	fail "a cursor of ${CW_}x$CH_ at buffer scale $CS_"
 echo "ok: its cursor, ${CW_}x$CH_ at buffer scale $CS_"
+check "and a viewport shows it at 8" "[ \"\$(cursor_dest)\" = '8 8' ]"
+# The pointer leaves, the scale changes: the cursor isn't shown, and the surface
+# lets go of the old theme's buffer before that goes.
+do_input move 1000 600
+check "the pointer leaves the clock" "grep -q 'wl_pointer#[0-9]*\.leave(' \"$WL_LOG\""
+GONE=$(grep -c 'wl_buffer#[0-9]*\.destroy()' "$WL_LOG")
+sed -i 's/outputScale: 4$/outputScale: 2/' "$XDG_CONFIG_HOME/mwc/mwmrc"
+reload_mwc
+check "the output is at scale 2 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
+check "the old theme is gone" \
+	"[ \"\$(grep -c 'wl_buffer#[0-9]*\.destroy()' \"$WL_LOG\")\" -gt $GONE ]"
+[ -z "$(cursor_kept)" ] || fail "the cursor surface showed destroyed buffers: $(cursor_kept)"
+echo "ok: no cursor buffer is destroyed while shown"
 kill -0 "$PID_ck" 2>/dev/null || fail "digitalClock died at scale 4"
 kill "$PID_ck"
 wait "$PID_ck" 2>/dev/null
@@ -301,10 +385,12 @@ wait "$PID_ck" 2>/dev/null
 VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/version.h")
 [ "$("$CK" -v)" = "digitalClock $VERSION" ] || fail "-v: $("$CK" -v)"
 echo "ok: -v prints the version"
-"$CK" -v junk >/dev/null 2>&1 && fail "-v junk exits with 0"
-echo "ok: -v with more is a usage error"
 "$CK" -h 2>/dev/null | grep -q '^usage: digitalClock' || fail "-h: no usage on stdout"
 echo "ok: -h prints the usage on stdout"
+for a in "-v junk" "-h junk" "--help" "-x"; do
+	"$CK" $a >/dev/null 2>&1 && fail "$a: exit 0"
+	echo "ok: $a is refused"
+done
 
 for p in $PIDS_sisters; do
 	kill "$p" 2>/dev/null

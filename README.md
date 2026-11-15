@@ -47,7 +47,8 @@ dock does not move every minute.
 It draws only mwm's thin border, no title bar, buttons or resize handles. The border
 takes the active colour while the clock has the keyboard. The colours are mwc's:
 `MWC_INACTIVE` and `MWC_ACTIVE` from the environment, else `Mwm*background` and
-`Mwm*activeBackground` from the mwmrc, else the Motif defaults.
+`Mwm*activeBackground` from the mwmrc, else the Motif defaults. The text is
+`Mwm*foreground`, else black or white, whichever reads better on the background.
 
 The display changes on the full second, and at once when the system clock is set or
 the machine resumes.
@@ -86,8 +87,9 @@ open is written down in CAVEATS.
 
 runs digitalClock in the dock of a headless mwc beside deskControl and pulseControl
 and checks in screenshots its border and focus, the height against both, the digits,
-the date and its contrast, that it ticks, a format with letters, the colours it reads,
-the keys, the cursor and sharpness on a scaled output, and `-v`. It needs a built
+the date and its contrast, that it ticks, a format with letters, the colours it reads
+from the environment and the mwmrc, the keys, the cursor and sharpness on a scaled
+output, `-v` and `-h`. It needs a built
 mwc with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default
 `../mwc`), grim, and the sisters built next to this directory; without them set
 `SKIP_SISTERS=1`. mwc's development box has all of it:
@@ -95,4 +97,5 @@ mwc with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by defau
     distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/mClock && make test'
 
 The log is in `build/ui.log`, the clock's own in `build/ui-digitalClock.log`, the
-sisters' in `build/ui-sisters.log`, a failure's screenshot in `build/ui-last.png`.
+sisters' in `build/ui-sisters.log`, its protocol log on a scaled output in
+`build/ui-wayland.log`, a failure's screenshot in `build/ui-last.png`.

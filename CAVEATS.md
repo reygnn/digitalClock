@@ -17,12 +17,10 @@ the compositor; a compositor with wl_compositor 4 or 5 never asks, and there the
 window stays at scale 1 and is blurred.
 
 The cursor is loaded from the theme at its size times the scale, the theme's nearest
-size. When that is no multiple of the scale, it is shown at the largest scale below
-that divides it, and so a little larger; when the theme has nothing that large, it
-is smaller. `XCURSOR_SIZE` above 512 counts as unset.
-
-It binds the first seat. A seat removed and added again is not taken up until the
-clock restarts.
+size; when the theme has nothing that large, it is smaller. When that size is no
+multiple of the scale, a viewport shows it at its size over the scale. Without
+wp_viewporter it is shown at the largest scale below that divides it, and so a
+little larger. `XCURSOR_SIZE` above 256 counts as 256.
 
 
 ## Text

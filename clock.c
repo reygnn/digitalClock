@@ -8,7 +8,8 @@
  * pulseControl and deskControl with the same font, so the three line up in mwc's
  * dock. It reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE from the
  * environment, else Mwm*background and Mwm*activeBackground from
- * ~/.config/mwc/mwmrc, else the Motif defaults.
+ * ~/.config/mwc/mwmrc, else the Motif defaults. The text is Mwm*foreground, else
+ * black or white, whichever reads better.
  *
  * It asks for no server-side decoration and draws its own frame: only mwm's thin
  * border, no title bar, no buttons, no resize handles. The border takes the active
@@ -45,6 +46,7 @@
 #include <xkbcommon/xkbcommon-keysyms.h>
 
 #include "version.h"
+#include "viewporter-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #define BEV 2           /* bevel width, as in mwm */
@@ -88,6 +90,7 @@ static struct wl_display *dpy;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct wl_seat *seat;
+static uint32_t seat_global;    /* its name in the registry */
 static struct xdg_wm_base *wm_base;
 static struct wl_surface *surface;
 static struct wl_callback *frame;       /* a frame is on its way */
@@ -103,10 +106,14 @@ static struct wl_surface *cursor_surf;
 static struct wl_cursor_theme *cursor_theme;
 static struct wl_cursor_image *cursor_img;
 static int cursor_scale;         /* the scale the theme was loaded for */
+static int cursor_buf_scale;     /* the buffer scale its image is shown at */
+static int cursor_vw, cursor_vh; /* its size on the window, if the viewport sets it */
+static struct wp_viewporter *viewporter;
+static struct wp_viewport *cursor_vp;
 static uint32_t ptr_serial;     /* the last enter's, for set_cursor */
 static int ptr_in;              /* the pointer is on the window */
 static void cursor_update(void);
-static void cursor_show(void);
+static int cursor_show(void);
 
 static struct wl_keyboard *keyboard;
 static struct xkb_context *xkb;
@@ -290,22 +297,23 @@ static int parse_color(const char *s, uint32_t *out)
 /* Last global "Mwm*key: value" line of ~/.config/mwc/mwmrc. */
 static char *mwmrc_get(const char *key, char *val, size_t n)
 {
-	char path[PATH_MAX], line[512];
+	char path[PATH_MAX];
 	const char *home = getenv("HOME"), *xdg = getenv("XDG_CONFIG_HOME");
 	int len;
 	if (xdg && *xdg)
 		len = snprintf(path, sizeof path, "%s/mwc/mwmrc", xdg);
+	else if (home && *home)
+		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc", home);
 	else
-		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc",
-			home ? home : "");
+		return NULL;    /* as mwc: no HOME, no mwmrc, not /.config */
 	if (len < 0 || (size_t)len >= sizeof path)
 		return NULL;
 	FILE *f = fopen(path, "r");
 	if (!f)
 		return NULL;
-	char *found = NULL;
-	size_t kl = strlen(key);
-	while (fgets(line, sizeof line, f)) {
+	char *found = NULL, *line = NULL;       /* whole lines, however long */
+	size_t kl = strlen(key), cap = 0;
+	while (getline(&line, &cap, f) > 0) {
 		char *p = line;
 		while (isspace((unsigned char)*p))
 			p++;
@@ -325,20 +333,29 @@ static char *mwmrc_get(const char *key, char *val, size_t n)
 		char *e = p + strlen(p);
 		while (e > p && isspace((unsigned char)e[-1]))
 			*--e = 0;
-		if ((size_t)snprintf(val, n, "%s", p) < n)
+		/* The last line wins, as in mwc: one too long to keep is no value,
+		 * not a cut one and not the line before it. */
+		found = NULL;
+		if ((size_t)(e - p) < n) {
+			memcpy(val, p, e - p + 1);
 			found = val;
+		}
 	}
+	free(line);
 	fclose(f);
 	return found;
+}
+
+static int mwmrc_color(const char *res, uint32_t *out)
+{
+	char v[256];
+	return parse_color(mwmrc_get(res, v, sizeof v), out);
 }
 
 static uint32_t setting(const char *env, const char *res, uint32_t def)
 {
 	uint32_t rgb;
-	char v[256];
-	if (parse_color(getenv(env), &rgb))
-		return rgb;
-	if (parse_color(mwmrc_get(res, v, sizeof v), &rgb))
+	if (parse_color(getenv(env), &rgb) || mwmrc_color(res, &rgb))
 		return rgb;
 	return def;
 }
@@ -355,7 +372,10 @@ static void theme_init(void)
 	px_top = mix(bg, 0xffffff, 0.55f);
 	px_bot = mix(bg, 0x000000, 0.5f);
 	px_sel = setting("MWC_ACTIVE", "activeBackground", 0x7387ad);
-	xc_fg = contrast(bg);
+	/* Text as mwc's titles: the resource if set, else black or white. It is
+	 * always on the background: the active colour is only the border's. */
+	if (!mwmrc_color("foreground", &xc_fg))
+		xc_fg = contrast(bg);
 	xc_dim = dimmed(bg, xc_fg);
 
 	const char *f = getenv("CLOCK_FONT");
@@ -645,7 +665,8 @@ static void kb_keymap(void *data, struct wl_keyboard *k, uint32_t format,
 	close(fd);
 	if (s == MAP_FAILED)
 		return;
-	struct xkb_keymap *map = xkb_keymap_new_from_string(xkb, s,
+	/* The keymap need not end in a NUL within size. */
+	struct xkb_keymap *map = xkb_keymap_new_from_buffer(xkb, s, strnlen(s, size),
 		XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
 	munmap(s, size);
 	struct xkb_state *state = map ? xkb_state_new(map) : NULL;
@@ -770,8 +791,7 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		pointer = wl_seat_get_pointer(s);
 		wl_pointer_add_listener(pointer, &pointer_listener, NULL);
 	} else if (!want_ptr && pointer) {
-		/* release is from wl_seat 3 on */
-		if (wl_seat_get_version(s) >= 3)
+		if (wl_pointer_get_version(pointer) >= WL_POINTER_RELEASE_SINCE_VERSION)
 			wl_pointer_release(pointer);
 		else
 			wl_pointer_destroy(pointer);
@@ -782,7 +802,7 @@ static void seat_capabilities(void *data, struct wl_seat *s, uint32_t caps)
 		keyboard = wl_seat_get_keyboard(s);
 		wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
 	} else if (!want_kb && keyboard) {
-		if (wl_seat_get_version(s) >= 3)
+		if (wl_keyboard_get_version(keyboard) >= WL_KEYBOARD_RELEASE_SINCE_VERSION)
 			wl_keyboard_release(keyboard);
 		else
 			wl_keyboard_destroy(keyboard);
@@ -821,7 +841,10 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 		shm = wl_registry_bind(r, name, &wl_shm_interface, 1);
 	} else if (!strcmp(iface, wl_seat_interface.name) && !seat) {
 		seat = wl_registry_bind(r, name, &wl_seat_interface, MIN(ver, 7));
+		seat_global = name;
 		wl_seat_add_listener(seat, &seat_listener, NULL);
+	} else if (!strcmp(iface, wp_viewporter_interface.name) && !viewporter) {
+		viewporter = wl_registry_bind(r, name, &wp_viewporter_interface, 1);
 	} else if (!strcmp(iface, xdg_wm_base_interface.name)) {
 		wm_base = wl_registry_bind(r, name, &xdg_wm_base_interface,
 			MIN(ver, 2));
@@ -829,8 +852,17 @@ static void registry_global(void *data, struct wl_registry *r, uint32_t name,
 	}
 }
 
+/* A seat that goes is let go of, so that the next one announced is taken. */
 static void registry_remove(void *data, struct wl_registry *r, uint32_t name)
 {
+	if (!seat || name != seat_global)
+		return;
+	seat_capabilities(NULL, seat, 0);
+	if (wl_seat_get_version(seat) >= WL_SEAT_RELEASE_SINCE_VERSION)
+		wl_seat_release(seat);
+	else
+		wl_seat_destroy(seat);
+	seat = NULL;
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -867,23 +899,47 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	.close = top_close,
 };
 
-/* XCURSOR_SIZE, or 24 if it is no size; at most 512, so that times the scale
- * stays an int. */
+/* XCURSOR_SIZE, 24 if unset or bad, at most 256: times the scale it must not
+ * overflow. */
 static int cursor_size(void)
 {
 	const char *s = getenv("XCURSOR_SIZE");
 	char *end;
-	if (!s || !*s)
-		return 24;
 	errno = 0;
-	long v = strtol(s, &end, 10);
-	return errno || *end || v < 1 || v > 512 ? 24 : (int)v;
+	long v = s ? strtol(s, &end, 10) : 0;
+	if (!s || end == s || *end || errno || v <= 0)
+		return 24;
+	return v > 256 ? 256 : (int)v;
+}
+
+/* A theme has only some sizes: Adwaita gives 30 for 28. A buffer scale that
+ * doesn't divide the size is a protocol error. With a viewport the buffer is
+ * shown at its size over the scale, as on mwc's own surfaces; without, at the
+ * largest scale up to the window's that divides it, and the cursor is that much
+ * larger. */
+static void cursor_fit(void)
+{
+	int w = cursor_img->width, h = cursor_img->height, s = cursor_scale;
+	cursor_buf_scale = 1;
+	cursor_vw = cursor_vh = -1;
+	if (w % s == 0 && h % s == 0) {
+		cursor_buf_scale = s;
+	} else if (cursor_vp) {
+		cursor_vw = MAX((w + s / 2) / s, 1);
+		cursor_vh = MAX((h + s / 2) / s, 1);
+	} else {
+		for (int d = s - 1; d > 1; d--)
+			if (w % d == 0 && h % d == 0) {
+				cursor_buf_scale = d;
+				break;
+			}
+	}
 }
 
 /* The theme's cursor at the window's scale, loaded again when that changes, and
- * shown if the pointer is on the window. The old theme goes only after the new
- * cursor is attached: its buffer may still be on cursor_surf. Without a new
- * cursor the old one stays. */
+ * shown if the pointer is on the window. A failed load keeps the old cursor and
+ * is tried again on the next enter. The old theme's buffers go with it, so the
+ * surface shows the new cursor or none before it goes. */
 static void cursor_update(void)
 {
 	if (cursor_scale != scale) {
@@ -899,7 +955,13 @@ static void cursor_update(void)
 			cursor_scale = scale;
 			if (!cursor_surf)
 				cursor_surf = wl_compositor_create_surface(compositor);
-			cursor_show();
+			if (viewporter && !cursor_vp)
+				cursor_vp = wp_viewporter_get_viewport(viewporter, cursor_surf);
+			cursor_fit();
+			if (!cursor_show() && old) {
+				wl_surface_attach(cursor_surf, NULL, 0, 0);
+				wl_surface_commit(cursor_surf);
+			}
 			if (old)
 				wl_cursor_theme_destroy(old);
 			return;
@@ -910,24 +972,29 @@ static void cursor_update(void)
 	cursor_show();
 }
 
-/* The cursor on the window, if the pointer is there. A theme has only some sizes:
- * Adwaita's 64 at scale 3 would be a buffer the scale doesn't divide, which a
- * compositor may refuse with invalid_size. Then the largest scale below that
- * divides it, and the cursor is a little larger. */
-static void cursor_show(void)
+/* The cursor on the window, if the pointer is there; 0 if not shown. */
+static int cursor_show(void)
 {
 	if (!pointer || !ptr_in || !cursor_img)
-		return;
-	int bs = cursor_scale;
-	while (bs > 1 && (cursor_img->width % bs || cursor_img->height % bs))
-		bs--;
-	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf,
-		cursor_img->hotspot_x / bs, cursor_img->hotspot_y / bs);
-	wl_surface_set_buffer_scale(cursor_surf, bs);
+		return 0;
+	int d = cursor_buf_scale;
+	int hx = cursor_img->hotspot_x / d, hy = cursor_img->hotspot_y / d;
+	if (cursor_vw > 0) {
+		/* Rounded as the viewport's size is. */
+		hx = (cursor_img->hotspot_x * cursor_vw + cursor_img->width / 2) /
+			cursor_img->width;
+		hy = (cursor_img->hotspot_y * cursor_vh + cursor_img->height / 2) /
+			cursor_img->height;
+	}
+	wl_pointer_set_cursor(pointer, ptr_serial, cursor_surf, hx, hy);
+	if (cursor_vp)
+		wp_viewport_set_destination(cursor_vp, cursor_vw, cursor_vh);
+	wl_surface_set_buffer_scale(cursor_surf, d);
 	wl_surface_attach(cursor_surf, wl_cursor_image_get_buffer(cursor_img), 0, 0);
 	wl_surface_damage_buffer(cursor_surf, 0, 0, cursor_img->width,
 		cursor_img->height);
 	wl_surface_commit(cursor_surf);
+	return 1;
 }
 
 /* Sharp on a scaled output: wl_compositor 6 says which scale the output it is on
