@@ -195,7 +195,7 @@ echo "ok: and it quits"
 
 # On a mid-tone such as mwc's activeBackground black reads better than white: the
 # digits are black and nothing in the field is white.
-MWC_INACTIVE=$SEL CLOCK_FORMAT=%H:%M start_clock
+MWC_INACTIVE="#$SEL" CLOCK_FORMAT=%H:%M start_clock
 for ((i = 0; i < 30; i++)); do
 	shoot && n=$(ink) &&
 		white=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) ffffff) &&
