@@ -62,6 +62,8 @@ where() {
 	CW=$(get digitalClock w) CH=$(get digitalClock h)
 }
 ink() { count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) $INK; }
+# The time alone: the field above the date's strip.
+time_ink() { count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN - 16)) "$@"; }
 # The strip along the field's bottom where the date is, and only the date.
 strip() { count $((X0 + IN)) $((Y0 + CH - IN - 16)) $((CW - 2 * IN)) 16 "$@"; }
 # The date's own colour, nearly exact: count's tolerance would take the old one too.
@@ -218,7 +220,8 @@ echo "ok: and it quits"
 # the default background, to keep 4.5:1.
 MWC_INACTIVE="#$SEL" CLOCK_FORMAT=%H:%M start_clock
 for ((i = 0; i < 30; i++)); do
-	shoot && n=$(ink) &&
+	# The date's 171b23 is within count's tolerance of black: the time alone.
+	shoot && n=$(time_ink $INK 6) &&
 		white=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) ffffff) &&
 		date=$(strip $SEL_DIM $DATE_TOL) &&
 		[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && [ "${date:-0}" -gt 8 ] && break
@@ -296,6 +299,40 @@ check "a long time and a long date warn" \
 	"[ \"\$(grep -c 'makes more than 255 bytes' \"$long\")\" = 2 ]"
 kill "$PID_long" 2>/dev/null
 wait "$PID_long" 2>/dev/null
+check "the long clock is gone" "[ -z \"\$(get digitalClock x)\" ]"
+# Once: with the seconds as the time, it draws every second, and two draws later
+# the date has still warned once.
+CLOCK_FORMAT=%S CLOCK_DATE=$(printf 'b%.0s' {1..300}) WAYLAND_DEBUG=client \
+	WAYLAND_DISPLAY=wayland-0 "$CK" >"$long" 2>&1 &
+PID_long=$!
+check "a long date warns" "grep -q 'makes more than 255 bytes' \"$long\""
+check "the clock with the long date is mapped" "[ -n \"\$(get digitalClock x)\" ]"
+# Two seconds on the wall clock and two commits after: two ticks at least, not
+# only the commits of the start.
+commits() { grep -c 'wl_surface#[0-9]*\.commit()' "$long"; }
+C0=$(commits) T0=$(date +%s)
+check "it ticks twice" \
+	"[ \$(date +%s) -ge $((T0 + 2)) ] && [ \"\$(commits)\" -ge $((C0 + 2)) ]"
+[ "$(grep -c 'makes more than 255 bytes' "$long")" = 1 ] ||
+	fail "the long date warned $(grep -c 'makes more than 255 bytes' "$long") times"
+echo "ok: and only once"
+kill "$PID_long" 2>/dev/null
+wait "$PID_long" 2>/dev/null
+check "the long clock is gone" "[ -z \"\$(get digitalClock x)\" ]"
+
+# Without a date the time takes the whole field, down into the date's strip, where
+# with one there is no black.
+CLOCK_DATE= CLOCK_FORMAT=%H:%M start_clock
+for ((i = 0; i < 30; i++)); do
+	shoot && n=$(strip $INK) && [ "${n:-0}" -gt 50 ] && break
+	sleep 0.1
+done
+[ "${n:-0}" -gt 50 ] ||
+	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
+	  fail "CLOCK_DATE empty: $n black pixels in the date's strip"; }
+echo "ok: without a date the time fills the field"
+focus_clock
+quit_clock
 
 # ---- a scaled output ---------------------------------------------------------------------
 
@@ -389,12 +426,16 @@ echo "ok: the cursor is swapped without going empty"
 # lets go of the old theme's buffer before that goes.
 do_input move 1000 600
 check "the pointer leaves the clock" "grep -q 'wl_pointer#[0-9]*\.leave(' \"$WL_LOG\""
-GONE=$(grep -c 'wl_buffer#[0-9]*\.destroy()' "$WL_LOG")
+# The buffer the cursor showed last is the old theme's; the window's own go too.
+OLD_BUF=$(grep -o "wl_surface#$CURSOR_SURF\.attach(wl_buffer#[0-9]*" "$WL_LOG" | tail -1 |
+	sed 's/.*#//')
+[ -n "$OLD_BUF" ] || fail "no buffer on the cursor surface"
+FROM=$(($(wc -l <"$WL_LOG") + 1))
 sed -i 's/outputScale: 4$/outputScale: 2/' "$XDG_CONFIG_HOME/mwc/mwmrc"
 reload_mwc
 check "the output is at scale 2 again" "[ \"\$(global output_HEADLESS-1 scale)\" = 200 ]"
 check "the old theme is gone" \
-	"[ \"\$(grep -c 'wl_buffer#[0-9]*\.destroy()' \"$WL_LOG\")\" -gt $GONE ]"
+	"tail -n +$FROM \"$WL_LOG\" | grep -q 'wl_buffer#$OLD_BUF\.destroy()'"
 [ -z "$(cursor_kept)" ] || fail "the cursor surface showed destroyed buffers: $(cursor_kept)"
 echo "ok: no cursor buffer is destroyed while shown"
 kill -0 "$PID_ck" 2>/dev/null || fail "digitalClock died at scale 4"
@@ -404,7 +445,8 @@ wait "$PID_ck" 2>/dev/null
 VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/version.h")
 [ "$("$CK" -v)" = "digitalClock $VERSION" ] || fail "-v: $("$CK" -v)"
 echo "ok: -v prints the version"
-"$CK" -h 2>/dev/null | grep -q '^usage: digitalClock' || fail "-h: no usage on stdout"
+out=$("$CK" -h 2>/dev/null) || fail "-h: exit $?"
+echo "$out" | grep -q '^usage: digitalClock' || fail "-h: no usage on stdout"
 echo "ok: -h prints the usage on stdout"
 for a in -v -h; do
 	"$CK" $a >/dev/full 2>/dev/null && fail "$a: exit 0 on a full disk"
