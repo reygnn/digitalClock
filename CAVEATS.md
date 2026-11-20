@@ -33,10 +33,3 @@ differ in height, sit a little high.
 
 While the window is hidden, it gets no frames and does not draw. Shown again, it may
 show the old time for one frame.
-
-
-## Input
-
-It takes the first seat the compositor announces. When that seat goes, it takes the
-next one announced after that, not one that was there already; until then it has no
-keyboard and no pointer. mwc has one seat.
