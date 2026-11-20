@@ -33,3 +33,9 @@ differ in height, sit a little high.
 
 While the window is hidden, it gets no frames and does not draw. Shown again, it may
 show the old time for one frame.
+
+
+## Input
+
+It keeps the first eight seats the compositor announces. One beyond that is taken
+only if it is announced again after the others went.

@@ -71,9 +71,14 @@ static void test_timer(void)
 	struct itimerspec its;
 	CHECK(fd >= 0 && arm_timer(fd) == 0);
 	CHECK(timerfd_gettime(fd, &its) == 0);
-	/* the next full second, then every second */
+	/* the next full second, then every second: what is left and the time now
+	 * make a whole second, within 50 ms for a slow run */
+	struct timespec now;
+	clock_gettime(CLOCK_REALTIME, &now);
+	long off = (now.tv_nsec + its.it_value.tv_nsec) % 1000000000L;
 	CHECK(its.it_interval.tv_sec == 1 && its.it_interval.tv_nsec == 0);
-	CHECK(its.it_value.tv_sec == 0 && its.it_value.tv_nsec > 0);
+	CHECK(its.it_value.tv_sec == 0);
+	CHECK(off < 50000000L || off > 950000000L);
 	close(fd);
 	CHECK(arm_timer(fd) == -1);
 

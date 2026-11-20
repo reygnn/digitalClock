@@ -122,10 +122,16 @@ static void test_mwmrc(void)
 	CHECK(got("foo*background", "#444444"));
 	CHECK(got("backgroun", NULL));
 
-	/* A line longer than any buffer is read whole. */
-	char *big = malloc(10000);
-	memset(big, 'x', 9000);
-	strcpy(big + 9000, ": no\nMwm*background: #777777\n");
+	/* A line longer than any buffer is read whole: a comment of setting-like
+	 * pieces 32 bytes apart, so that a reader cutting it into pieces of most
+	 * sizes gets one starting with "Mwm*background:". */
+	enum { UNIT = 32, UNITS = 300 };
+	char *big = malloc(UNIT * (UNITS + 2));
+	int at = sprintf(big, "Mwm*background: #777777\n");
+	at += sprintf(big + at, "%-*s", UNIT, "!");
+	for (int i = 0; i < UNITS; i++)
+		at += sprintf(big + at, "%-*s", UNIT, "Mwm*background: #999999");
+	strcpy(big + at, "\n");
 	rc(dir, big);
 	free(big);
 	CHECK(got("background", "#777777"));

@@ -323,6 +323,7 @@ check "the long clock is gone" "[ -z \"\$(get digitalClock x)\" ]"
 # Without a date the time takes the whole field, down into the date's strip, where
 # with one there is no black.
 CLOCK_DATE= CLOCK_FORMAT=%H:%M start_clock
+n=
 for ((i = 0; i < 30; i++)); do
 	shoot && n=$(strip $INK) && [ "${n:-0}" -gt 50 ] && break
 	sleep 0.1

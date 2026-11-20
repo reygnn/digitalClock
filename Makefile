@@ -44,7 +44,8 @@ build/test_timefmt: tests/test_timefmt.c timefmt.c timefmt.h | build
 		-Wl,--wrap=clock_gettime
 
 build/test_util: tests/test_util.c util.c util.h | build
-	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_util.c util.c
+	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags xkbcommon) -o $@ \
+		tests/test_util.c util.c
 
 check: $(UNITS)
 	@for t in $(UNITS); do echo "$$t"; ./$$t || exit 1; done
