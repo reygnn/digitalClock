@@ -1,6 +1,7 @@
 /* test_timefmt.c - the time as one line, and its timer: make check */
 #define _GNU_SOURCE
 #include <locale.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/timerfd.h>
@@ -45,6 +46,25 @@ static void test_format(void)
 	CHECK(fmt("%c%c%c%c%c%c%c%c%c%c%c%c", out) == 1 && !strcmp(out, ""));
 }
 
+/* The wall clock as a fake around the real one: from call number step_at on, it
+ * is step seconds behind, as if it had been set back just then, and back more
+ * seconds with every call after. A step cannot be made real without
+ * CAP_SYS_TIME. */
+int __real_clock_gettime(clockid_t c, struct timespec *ts);
+static int calls, step_at = -1;
+static time_t step, back;
+
+int __wrap_clock_gettime(clockid_t c, struct timespec *ts)
+{
+	int r = __real_clock_gettime(c, ts);
+	if (c == CLOCK_REALTIME && step_at >= 0) {
+		if (calls >= step_at)
+			ts->tv_sec -= step + back * (calls - step_at);
+		calls++;
+	}
+	return r;
+}
+
 static void test_timer(void)
 {
 	int fd = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
@@ -56,6 +76,26 @@ static void test_timer(void)
 	CHECK(its.it_value.tv_sec == 0 && its.it_value.tv_nsec > 0);
 	close(fd);
 	CHECK(arm_timer(fd) == -1);
+
+	/* Set back an hour between reading the clock and arming: armed on the
+	 * second after the new time, it is due at once, and an hour of seconds
+	 * have passed for the real clock. Not still an hour away. */
+	fd = timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
+	calls = 0;
+	step_at = 1;
+	step = 3600;
+	CHECK(arm_timer(fd) == 0);
+	uint64_t n = 0;
+	CHECK(read(fd, &n, sizeof n) == sizeof n && n > 3000);
+	/* A clock that goes back on every reading: it gives up and stays armed. */
+	calls = 0;
+	step_at = 0;
+	step = 0;
+	back = 10;
+	CHECK(arm_timer(fd) == 0 && calls == 16);
+	CHECK(timerfd_gettime(fd, &its) == 0 && its.it_interval.tv_sec == 1);
+	step_at = -1;
+	close(fd);
 }
 
 int main(void)

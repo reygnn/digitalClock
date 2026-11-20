@@ -37,9 +37,11 @@ build/test_theme: tests/test_theme.c theme.c theme.h | build
 	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags pango) -o $@ \
 		tests/test_theme.c theme.c $(shell $(PKG_CONFIG) --libs pango) -lm
 
+# clock_gettime wrapped: the test steps the wall clock, which needs root for real.
 build/test_timefmt: tests/test_timefmt.c timefmt.c timefmt.h | build
 	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags glib-2.0) -o $@ \
-		tests/test_timefmt.c timefmt.c $(shell $(PKG_CONFIG) --libs glib-2.0)
+		tests/test_timefmt.c timefmt.c $(shell $(PKG_CONFIG) --libs glib-2.0) \
+		-Wl,--wrap=clock_gettime
 
 build/test_util: tests/test_util.c util.c util.h | build
 	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_util.c util.c

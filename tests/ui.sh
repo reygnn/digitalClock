@@ -406,6 +406,11 @@ VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/versio
 echo "ok: -v prints the version"
 "$CK" -h 2>/dev/null | grep -q '^usage: digitalClock' || fail "-h: no usage on stdout"
 echo "ok: -h prints the usage on stdout"
+for a in -v -h; do
+	"$CK" $a >/dev/full 2>/dev/null && fail "$a: exit 0 on a full disk"
+	"$CK" $a >&- 2>/dev/null && fail "$a: exit 0 without stdout"
+	echo "ok: $a fails when stdout does"
+done
 for a in "-v junk" "-h junk" "--help" "-x"; do
 	"$CK" $a >/dev/null 2>&1 && fail "$a: exit 0"
 	echo "ok: $a is refused"

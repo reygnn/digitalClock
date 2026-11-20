@@ -14,6 +14,11 @@ int cursor_size(const char *s);
  * divides it, and the cursor that much larger. */
 void cursor_fit(int w, int h, int s, int has_vp, int *buf_scale, int *vw, int *vh);
 
+/* The buffer scale for the compositor's preferred factor: at most 16, as in
+ * pulseControl, so that the window's and the cursor's sizes times it cannot
+ * overflow; 0 for a factor below 1, which is to be ignored. */
+int buffer_scale(int factor);
+
 /* Whether the key quits: Esc, q or Q, with Ctrl also w and W. With Alt or Super
  * held no key does. ks is an xkb keysym. */
 int key_quits(unsigned ks, int ctrl, int alt, int logo);

@@ -52,6 +52,20 @@ static void test_cursor_fit(void)
 	CHECK(fit(7, 7, 4, 0, 1, -1, -1));
 }
 
+static void test_buffer_scale(void)
+{
+	CHECK(buffer_scale(1) == 1);
+	CHECK(buffer_scale(2) == 2);
+	CHECK(buffer_scale(16) == 16);
+	CHECK(buffer_scale(17) == 16);
+	/* 256 times 2^23 would pass INT_MAX */
+	CHECK(buffer_scale(1 << 23) == 16);
+	CHECK(buffer_scale(0x7fffffff) == 16);
+	CHECK(buffer_scale(0) == 0);
+	CHECK(buffer_scale(-1) == 0);
+	CHECK(buffer_scale(-0x7fffffff - 1) == 0);
+}
+
 static void test_keys(void)
 {
 	CHECK(key_quits(XKB_KEY_q, 0, 0, 0));
@@ -77,6 +91,7 @@ int main(void)
 {
 	test_cursor_size();
 	test_cursor_fit();
+	test_buffer_scale();
 	test_keys();
 	printf("test_util: %d/%d\n", checks - failures, checks);
 	return failures != 0;

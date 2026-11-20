@@ -47,12 +47,23 @@ int format_tm(const struct tm *tm, const char *f, char *out)
 
 int arm_timer(int fd)
 {
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	struct itimerspec its = {
-		.it_interval = { 1, 0 },
-		.it_value = { now.tv_sec + 1, 0 },
-	};
-	return timerfd_settime(fd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &its,
-		NULL);
+	/* The kernel only cancels for a step after timerfd_settime. One between
+	 * reading the clock and that would leave the timer on a second far ahead,
+	 * and the clock still for as long as the step; so read it again after,
+	 * and arm anew while it went back. A step forward fires at once anyway. */
+	for (int tries = 0; tries < 8; tries++) {
+		struct timespec now, after;
+		clock_gettime(CLOCK_REALTIME, &now);
+		struct itimerspec its = {
+			.it_interval = { 1, 0 },
+			.it_value = { now.tv_sec + 1, 0 },
+		};
+		if (timerfd_settime(fd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET,
+		    &its, NULL) < 0)
+			return -1;
+		clock_gettime(CLOCK_REALTIME, &after);
+		if (after.tv_sec >= now.tv_sec)
+			break;
+	}
+	return 0;
 }

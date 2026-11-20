@@ -11,7 +11,7 @@ clock restarts.
 It needs wl_compositor 4. It draws at the integer scale the compositor asks for with
 wl_compositor 6. A fractional scale is drawn at the next integer and scaled down by
 the compositor; a compositor with wl_compositor 4 or 5 never asks, and there the
-window stays at scale 1 and is blurred.
+window stays at scale 1 and is blurred. A scale above 16 is drawn at 16.
 
 The cursor is loaded from the theme at its size times the scale, the theme's nearest
 size; when the theme has nothing that large, it is smaller. When that size is no
@@ -33,3 +33,10 @@ differ in height, sit a little high.
 
 While the window is hidden, it gets no frames and does not draw. Shown again, it may
 show the old time for one frame.
+
+
+## Input
+
+It takes the first seat the compositor announces. When that seat goes, it takes the
+next one announced after that, not one that was there already; until then it has no
+keyboard and no pointer. mwc has one seat.

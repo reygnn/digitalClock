@@ -33,6 +33,13 @@ void cursor_fit(int w, int h, int s, int has_vp, int *buf_scale, int *vw, int *v
 	}
 }
 
+int buffer_scale(int factor)
+{
+	if (factor < 1)
+		return 0;
+	return factor > 16 ? 16 : factor;       /* no output is denser */
+}
+
 int key_quits(unsigned ks, int ctrl, int alt, int logo)
 {
 	if (alt || logo)

@@ -821,7 +821,8 @@ static void surf_leave(void *data, struct wl_surface *s, struct wl_output *o)
 
 static void surf_preferred_scale(void *data, struct wl_surface *s, int32_t factor)
 {
-	if (factor < 1 || factor == scale)
+	factor = buffer_scale(factor);
+	if (!factor || factor == scale)
 		return;
 	scale = factor;
 	dirty = 1;
@@ -868,17 +869,23 @@ static void lost_connection(void)
 int main(int argc, char **argv)
 {
 	if (argc > 1) {
-		if (argc == 2 && !strcmp(argv[1], "-v")) {
-			printf("digitalClock %s\n", DIGITALCLOCK_VERSION);
-			return 0;
-		}
+		int version = argc == 2 && !strcmp(argv[1], "-v");
 		/* Asked for, the usage goes to stdout, as mwc's. */
 		int help = argc == 2 && !strcmp(argv[1], "-h");
-		fprintf(help ? stdout : stderr, "usage: digitalClock [-v]\n"
-			"Environment: CLOCK_FORMAT (default \"%%H:%%M\"), CLOCK_DATE "
-			"(default \"%%a %%d.%%m.\", empty for none),\n"
-			"MWC_INACTIVE, MWC_ACTIVE.\n");
-		return help ? 0 : 1;
+		if (version)
+			printf("digitalClock %s\n", DIGITALCLOCK_VERSION);
+		else
+			fprintf(help ? stdout : stderr, "usage: digitalClock [-v]\n"
+				"Environment: CLOCK_FORMAT (default \"%%H:%%M\"), "
+				"CLOCK_DATE (default \"%%a %%d.%%m.\", empty for none),\n"
+				"MWC_INACTIVE, MWC_ACTIVE.\n");
+		/* A full disk or a closed stdout is no success: fully buffered, the
+		 * write only fails here. */
+		if (fflush(stdout) == EOF || ferror(stdout)) {
+			fprintf(stderr, "digitalClock: stdout: %s\n", strerror(errno));
+			return 1;
+		}
+		return version || help ? 0 : 1;
 	}
 	setlocale(LC_ALL, "");
 	const char *f = getenv("CLOCK_FORMAT");
