@@ -19,11 +19,33 @@ CK_CFLAGS = -std=c11 -Wall -Wextra -Wno-unused-parameter -Ibuild \
 	$(shell $(PKG_CONFIG) --cflags $(PKGS))
 CK_LIBS = $(shell $(PKG_CONFIG) --libs $(PKGS)) -lm
 
+MODS = theme.c timefmt.c util.c
+MODS_H = theme.h timefmt.h util.h
+
 all: digitalClock
 
-digitalClock: clock.c version.h $(PROTO_H) $(PROTO_C)
-	$(CC) $(CK_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ clock.c $(PROTO_C) \
-		$(CK_LIBS) $(LDLIBS)
+digitalClock: clock.c $(MODS) $(MODS_H) version.h $(PROTO_H) $(PROTO_C)
+	$(CC) $(CK_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ clock.c $(MODS) \
+		$(PROTO_C) $(CK_LIBS) $(LDLIBS)
+
+# The modules without Wayland, each under ASan and UBSan.
+UNIT_CFLAGS = -std=c11 -Wall -Wextra -g -O1 -fsanitize=address,undefined \
+	-fno-sanitize-recover=all
+UNITS = build/test_theme build/test_timefmt build/test_util
+
+build/test_theme: tests/test_theme.c theme.c theme.h | build
+	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags pango) -o $@ \
+		tests/test_theme.c theme.c $(shell $(PKG_CONFIG) --libs pango) -lm
+
+build/test_timefmt: tests/test_timefmt.c timefmt.c timefmt.h | build
+	$(CC) $(UNIT_CFLAGS) -I. $(shell $(PKG_CONFIG) --cflags glib-2.0) -o $@ \
+		tests/test_timefmt.c timefmt.c $(shell $(PKG_CONFIG) --libs glib-2.0)
+
+build/test_util: tests/test_util.c util.c util.h | build
+	$(CC) $(UNIT_CFLAGS) -I. -o $@ tests/test_util.c util.c
+
+check: $(UNITS)
+	@for t in $(UNITS); do echo "$$t"; ./$$t || exit 1; done
 
 build:
 	mkdir -p build
@@ -59,4 +81,4 @@ test: digitalClock
 clean:
 	rm -rf digitalClock build
 
-.PHONY: all install uninstall test clean
+.PHONY: all install uninstall check test clean

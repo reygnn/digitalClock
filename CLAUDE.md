@@ -11,7 +11,8 @@ Test inside mwc's `mwc-dev` distrobox; the host lacks grim.
 
 | Target | |
 |---|---|
-| `make` | digitalClock, one C file (`clock.c`) |
+| `make` | digitalClock: `clock.c` with the Wayland side, the modules without it (`theme.c`, `timefmt.c`, `util.c`) |
+| `make check` | `tests/test_*.c`: the modules under ASan and UBSan, no compositor |
 | `make test` | `tests/ui.sh`: the clock in a headless mwc's dock, checked in screenshots; log in `build/ui.log`, the clock's own in `build/ui-digitalClock.log`, the sisters' in `build/ui-sisters.log`, the protocol log in `build/ui-wayland.log`, a failure's screenshot in `build/ui-last.png` |
 
 `make test` needs a built mwc with `build/vinput`, `build/pngtool` and `build/xdgc`

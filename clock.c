@@ -2,12 +2,13 @@
  * digitalClock - the time in digits on Wayland, in the Motif look of mwc
  * (https://github.com/reygnn/mwc), mfm, pulseControl and deskControl.
  *
- * libwayland, xkbcommon, Pango and Cairo, one file, no toolkit. The time sits in a
- * sunken field, its digits as high as the field allows, the date below it in the
- * font of the sister tools' labels, dimmed. The font is fixed, DejaVu Sans 10, as
- * in pulseControl, deskControl and osDisplay, so the window is as high as theirs and
- * the four line up in mwc's dock. It reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE from the
- * environment, else Mwm*background and Mwm*activeBackground from
+ * libwayland, xkbcommon, Pango and Cairo, no toolkit; what needs no Wayland is in
+ * theme.c, timefmt.c and util.c. The time sits in a sunken field, its digits as
+ * high as the field allows, the date below it in the font of the sister tools'
+ * labels, dimmed. The font is fixed, DejaVu Sans 10, as in pulseControl,
+ * deskControl and osDisplay, so the window is as high as theirs and the four line
+ * up in mwc's dock. It reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE
+ * from the environment, else Mwm*background and Mwm*activeBackground from
  * ~/.config/mwc/mwmrc, else the Motif defaults. The text is Mwm*foreground, else
  * black or white, whichever reads better.
  *
@@ -24,18 +25,14 @@
  */
 #define _GNU_SOURCE
 #include <cairo.h>
-#include <ctype.h>
 #include <errno.h>
-#include <limits.h>
 #include <locale.h>
-#include <math.h>
 #include <pango/pangocairo.h>
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/mman.h>
 #include <sys/timerfd.h>
 #include <time.h>
@@ -45,6 +42,9 @@
 #include <xkbcommon/xkbcommon.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
+#include "theme.h"
+#include "timefmt.h"
+#include "util.h"
 #include "version.h"
 #include "viewporter-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
@@ -55,7 +55,6 @@
 #define FIELD_PAD 10    /* left and right of the digits */
 #define INK_PAD 5       /* above and below them */
 #define DATE_GAP 5      /* between the time's ink and the date's */
-#define MAX_TEXT 256
 #ifndef MAX            /* glib has them too */
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -216,136 +215,6 @@ static void frame_done(void *data, struct wl_callback *cb, uint32_t time)
 
 static const struct wl_callback_listener frame_listener = { frame_done };
 
-/* ---- colours (same rules as mwm's draw.c) ------------------------------- */
-
-static uint32_t mix(uint32_t rgb, uint32_t to, float f)
-{
-	uint32_t out = 0;
-	for (int sh = 0; sh <= 16; sh += 8) {
-		float c = (rgb >> sh) & 0xff, t = (to >> sh) & 0xff;
-		out |= (uint32_t)(c + (t - c) * f + 0.5f) << sh;
-	}
-	return out;
-}
-
-/* An sRGB channel as linear light. */
-static float linear(unsigned c)
-{
-	float v = c / 255.0f;
-	return v <= 0.04045f ? v / 12.92f : powf((v + 0.055f) / 1.055f, 2.4f);
-}
-
-/* Black or white, whichever has the higher WCAG contrast on bg. The two are equal
- * at a relative luminance of sqrt(1.05 * 0.05) - 0.05, a grey of about 0x76: a
- * mid-tone such as mwc's activeBackground gets black. */
-static float luminance(uint32_t c)
-{
-	return 0.2126f * linear((c >> 16) & 0xff) + 0.7152f * linear((c >> 8) & 0xff) +
-		0.0722f * linear(c & 0xff);
-}
-
-static uint32_t contrast(uint32_t bg)
-{
-	float l = luminance(bg);
-	return (l + 0.05f) * (l + 0.05f) > 1.05f * 0.05f ? 0x000000 : 0xffffff;
-}
-
-/* The date's colour: dimmed towards fg as the sisters' labels are, but no further
- * than WCAG AA's 4.5:1 for small text allows; fg itself if even that falls short. */
-static uint32_t dimmed(uint32_t bg, uint32_t fg)
-{
-	float lb = luminance(bg) + 0.05f;
-	for (int k = 12; k < 20; k++) {
-		uint32_t c = mix(bg, fg, k / 20.0f);
-		float lc = luminance(c) + 0.05f;
-		if ((lb > lc ? lb / lc : lc / lb) >= 4.5f)
-			return c;
-	}
-	return fg;
-}
-
-/* What mwc reads: "#rrggbb", names like "gold", and rgb:r/g/b with 1 to 4 hex
- * digits per channel. */
-static int parse_color(const char *s, uint32_t *out)
-{
-	PangoColor c;
-	if (!s || !*s)
-		return 0;
-	if (!strncasecmp(s, "rgb:", 4)) {
-		uint32_t rgb = 0;
-		s += 4;
-		for (int i = 0; i < 3; i++) {
-			/* Only hex digits, as mwc: strtoul alone also takes spaces,
-			 * signs and 0x. */
-			int digits = strspn(s, "0123456789abcdefABCDEF");
-			if (digits < 1 || digits > 4 || s[digits] != (i < 2 ? '/' : '\0'))
-				return 0;
-			unsigned long v = strtoul(s, NULL, 16);
-			unsigned long max = (1ul << (4 * digits)) - 1;
-			rgb = rgb << 8 | (v * 255 + max / 2) / max;
-			s += digits + 1;
-		}
-		*out = rgb;
-		return 1;
-	}
-	if (!pango_color_parse(&c, s))
-		return 0;
-	*out = (uint32_t)(c.red >> 8) << 16 | (c.green >> 8) << 8 | (c.blue >> 8);
-	return 1;
-}
-
-/* Last global "Mwm*key: value" line of ~/.config/mwc/mwmrc. */
-static char *mwmrc_get(const char *key, char *val, size_t n)
-{
-	char path[PATH_MAX];
-	const char *home = getenv("HOME"), *xdg = getenv("XDG_CONFIG_HOME");
-	int len;
-	if (xdg && *xdg)
-		len = snprintf(path, sizeof path, "%s/mwc/mwmrc", xdg);
-	else if (home && *home)
-		len = snprintf(path, sizeof path, "%s/.config/mwc/mwmrc", home);
-	else
-		return NULL;    /* as mwc: no HOME, no mwmrc, not /.config */
-	if (len < 0 || (size_t)len >= sizeof path)
-		return NULL;
-	FILE *f = fopen(path, "r");
-	if (!f)
-		return NULL;
-	char *found = NULL, *line = NULL;       /* whole lines, however long */
-	size_t kl = strlen(key), cap = 0;
-	while (getline(&line, &cap, f) > 0) {
-		char *p = line;
-		while (isspace((unsigned char)*p))
-			p++;
-		/* As mwc reads it: any case, "." or "*", blanks before the ":". */
-		char *colon = strchr(p, ':');
-		if (!colon)
-			continue;
-		char *ke = colon;
-		while (ke > p && isspace((unsigned char)ke[-1]))
-			ke--;
-		if (strncasecmp(p, "mwm", 3) || (p[3] != '*' && p[3] != '.') ||
-		    (size_t)(ke - (p + 4)) != kl || strncasecmp(p + 4, key, kl))
-			continue;
-		p = colon + 1;
-		while (isspace((unsigned char)*p))
-			p++;
-		char *e = p + strlen(p);
-		while (e > p && isspace((unsigned char)e[-1]))
-			*--e = 0;
-		/* The last line wins, as in mwc: one too long to keep is no value,
-		 * not a cut one and not the line before it. */
-		found = NULL;
-		if ((size_t)(e - p) < n) {
-			memcpy(val, p, e - p + 1);
-			found = val;
-		}
-	}
-	free(line);
-	fclose(f);
-	return found;
-}
-
 static int mwmrc_color(const char *res, uint32_t *out)
 {
 	char v[256];
@@ -454,61 +323,22 @@ static void theme_init(void)
 
 /* ---- the time ------------------------------------------------------------ */
 
-/* tm in format f as one line of UTF-8 in out[MAX_TEXT]; "" if it makes none. Too
- * long, it says so once per *warned. */
-static void format_tm(const struct tm *tm, const char *f, char *out, int *warned)
+static void arm_or_die(void)
 {
-	size_t n = MAX_TEXT;
-	out[0] = 0;
-	if (!tm || !*f)
-		return;
-	if (!strftime(out, n, f, tm)) {
-		/* 0 is also an empty result, as %p in some locales. With one byte in
-		 * front, only a result that does not fit makes 0. */
-		size_t fl = strlen(f);
-		char *xf = malloc(fl + 2), big[MAX_TEXT + 1];
-		if (xf) {
-			xf[0] = 'x';
-			memcpy(xf + 1, f, fl + 1);
-			if (!strftime(big, sizeof big, xf, tm) && !*warned) {
-				*warned = 1;
-				fprintf(stderr, "digitalClock: \"%s\" makes more than "
-					"%d bytes\n", f, MAX_TEXT - 1);
-			}
-			free(xf);
-		}
-		out[0] = 0;
-		return;
-	}
-	if (!g_utf8_validate(out, -1, NULL)) {       /* a locale not in UTF-8 */
-		gchar *u = g_locale_to_utf8(out, -1, NULL, NULL, NULL);
-		if (!u || strlen(u) >= n)
-			out[0] = 0;
-		else
-			memcpy(out, u, strlen(u) + 1);
-		g_free(u);
-	}
-	/* A layout of one paragraph shows a newline as a glyph. */
-	for (char *c = out; *c; c++)
-		if ((unsigned char)*c < 0x20)
-			*c = ' ';
-}
-
-/* Every full second on the wall clock. TFD_TIMER_CANCEL_ON_SET wakes it at once
- * when the clock is set, also after a resume; then it is armed anew. */
-static void arm_timer(void)
-{
-	struct timespec now;
-	clock_gettime(CLOCK_REALTIME, &now);
-	struct itimerspec its = {
-		.it_interval = { 1, 0 },
-		.it_value = { now.tv_sec + 1, 0 },
-	};
-	if (timerfd_settime(tfd, TFD_TIMER_ABSTIME | TFD_TIMER_CANCEL_ON_SET, &its,
-	    NULL) < 0) {
+	if (arm_timer(tfd) < 0) {
 		fprintf(stderr, "digitalClock: cannot set the timer: %s\n",
 			strerror(errno));
 		exit(1);
+	}
+}
+
+/* Too long, it says so once per *warned. */
+static void show_tm(const struct tm *tm, const char *f, char *out, int *warned)
+{
+	if (format_tm(tm, f, out) && !*warned) {
+		*warned = 1;
+		fprintf(stderr, "digitalClock: \"%s\" makes more than %d bytes\n", f,
+			MAX_TEXT - 1);
 	}
 }
 
@@ -523,8 +353,8 @@ static void tick(void)
 	struct tm tm, *now;
 	tzset();        /* the zone may have changed since the last tick */
 	now = localtime_r(&t, &tm);
-	format_tm(now, fmt, s, &warned_time);
-	format_tm(now, date_fmt, d, &warned_date);
+	show_tm(now, fmt, s, &warned_time);
+	show_tm(now, date_fmt, d, &warned_date);
 	if (strcmp(s, shown) || strcmp(d, shown_date)) {
 		memcpy(shown, s, sizeof shown);
 		memcpy(shown_date, d, sizeof shown_date);
@@ -536,7 +366,7 @@ static void timer_fired(void)
 {
 	uint64_t n;
 	if (read(tfd, &n, sizeof n) < 0 && errno == ECANCELED)
-		arm_timer();
+		arm_or_die();
 	tick();
 }
 
@@ -667,14 +497,8 @@ static int mod_on(const char *name)
 
 static void key_action(xkb_keysym_t ks)
 {
-	int ctrl = mod_on(XKB_MOD_NAME_CTRL), alt = mod_on(XKB_MOD_NAME_ALT),
-		logo = mod_on(XKB_MOD_NAME_LOGO);
-	if (alt || logo)
-		return;         /* Alt+Q must not quit */
-	if (ctrl && (ks == XKB_KEY_q || ks == XKB_KEY_Q || ks == XKB_KEY_w ||
-	    ks == XKB_KEY_W))
-		exit(0);
-	if (!ctrl && (ks == XKB_KEY_q || ks == XKB_KEY_Q || ks == XKB_KEY_Escape))
+	if (key_quits(ks, mod_on(XKB_MOD_NAME_CTRL), mod_on(XKB_MOD_NAME_ALT),
+	    mod_on(XKB_MOD_NAME_LOGO)))
 		exit(0);
 }
 
@@ -923,42 +747,6 @@ static const struct xdg_toplevel_listener toplevel_listener = {
 	.close = top_close,
 };
 
-/* XCURSOR_SIZE, 24 if unset or bad, at most 256: times the scale it must not
- * overflow. A number past LONG_MAX is the largest too, as in the other docks. */
-static int cursor_size(void)
-{
-	const char *s = getenv("XCURSOR_SIZE");
-	char *end;
-	long v = s ? strtol(s, &end, 10) : 0;
-	if (!s || end == s || *end || v <= 0)
-		return 24;
-	return v > 256 ? 256 : (int)v;
-}
-
-/* A theme has only some sizes: Adwaita gives 30 for 28. A buffer scale that
- * doesn't divide the size is a protocol error. With a viewport the buffer is
- * shown at its size over the scale, as on mwc's own surfaces; without, at the
- * largest scale up to the window's that divides it, and the cursor is that much
- * larger. */
-static void cursor_fit(void)
-{
-	int w = cursor_img->width, h = cursor_img->height, s = cursor_scale;
-	cursor_buf_scale = 1;
-	cursor_vw = cursor_vh = -1;
-	if (w % s == 0 && h % s == 0) {
-		cursor_buf_scale = s;
-	} else if (cursor_vp) {
-		cursor_vw = MAX((w + s / 2) / s, 1);
-		cursor_vh = MAX((h + s / 2) / s, 1);
-	} else {
-		for (int d = s - 1; d > 1; d--)
-			if (w % d == 0 && h % d == 0) {
-				cursor_buf_scale = d;
-				break;
-			}
-	}
-}
-
 /* The theme's cursor at the window's scale, loaded again when that changes, and
  * shown if the pointer is on the window. A failed load keeps the old cursor and
  * is tried again on the next enter. The old theme's buffers go with it, so the
@@ -967,7 +755,7 @@ static void cursor_update(void)
 {
 	if (cursor_scale != scale) {
 		struct wl_cursor_theme *t = wl_cursor_theme_load(getenv("XCURSOR_THEME"),
-			cursor_size() * scale, shm);
+			cursor_size(getenv("XCURSOR_SIZE")) * scale, shm);
 		struct wl_cursor *c = t ? wl_cursor_theme_get_cursor(t, "default") : NULL;
 		if (t && !c)
 			c = wl_cursor_theme_get_cursor(t, "left_ptr");
@@ -980,7 +768,8 @@ static void cursor_update(void)
 				cursor_surf = wl_compositor_create_surface(compositor);
 			if (viewporter && !cursor_vp)
 				cursor_vp = wp_viewporter_get_viewport(viewporter, cursor_surf);
-			cursor_fit();
+			cursor_fit(cursor_img->width, cursor_img->height, cursor_scale,
+				!!cursor_vp, &cursor_buf_scale, &cursor_vw, &cursor_vh);
 			if (!cursor_show() && old) {
 				wl_surface_attach(cursor_surf, NULL, 0, 0);
 				wl_surface_commit(cursor_surf);
@@ -1124,7 +913,7 @@ int main(int argc, char **argv)
 	cursor_update();
 	tick();         /* theme_init looks at the text */
 	theme_init();
-	arm_timer();
+	arm_or_die();
 	setup_window();
 	wl_surface_commit(surface);
 

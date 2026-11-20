@@ -4,8 +4,7 @@ digitalClock shows the time in digits, with the date below, in the look of the M
 window manager. It is made for the dock of [mwc](https://github.com/reygnn/mwc), beside
 [deskControl](https://github.com/reygnn/deskControl) and
 [pulseControl](https://github.com/reygnn/pulseControl), and runs on any Wayland
-compositor with xdg-shell. One C file on libwayland, xkbcommon, Cairo and Pango, no
-toolkit.
+compositor with xdg-shell. C on libwayland, xkbcommon, Cairo and Pango, no toolkit.
 
 
 ## Build
@@ -83,6 +82,12 @@ tests. What is open is written down in CAVEATS.
 
 
 ## Testing
+
+    make check
+
+runs the unit tests of the parts without Wayland under ASan and UBSan: the colours
+and the mwmrc (`theme.c`), the time as one line and its timer (`timefmt.c`), the
+cursor's size and scale and the keys that quit (`util.c`). It needs no compositor.
 
     make test
 
