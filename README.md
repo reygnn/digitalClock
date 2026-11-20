@@ -13,7 +13,7 @@ toolkit.
 On Ubuntu 26.04:
 
     sudo apt install build-essential pkg-config libwayland-dev wayland-protocols \
-        libxkbcommon-dev libcairo2-dev libpango1.0-dev
+        libxkbcommon-dev libcairo2-dev libpango1.0-dev fonts-dejavu-core
     make
     sudo make install
 
@@ -39,8 +39,10 @@ The order of the `dock` lines is the order in the dock; with the default
 ## Look
 
 The time sits in a sunken field, as large as the field allows, the date below it in
-the smaller font, dimmed as far as a contrast of 4.5:1 allows. The window is as high
-as deskControl and pulseControl with the same font, so the three line up in the dock.
+the smaller font, dimmed as far as a contrast of 4.5:1 allows. The font is fixed,
+DejaVu Sans 10, the same in deskControl, pulseControl and osDisplay, so the window is
+as high as theirs and the four line up in the dock. Without DejaVu Sans fontconfig
+takes another font, and digitalClock says so on stderr.
 It is as wide as its text and grows when the text does, but never shrinks, so the
 dock does not move every minute.
 
@@ -69,7 +71,6 @@ With Alt or Super held no key acts.
 |---|---|---|
 | `CLOCK_FORMAT` | `%H:%M` | the time, as for `strftime`, e.g. `%H:%M:%S`; with letters it is sized for their accents and descenders |
 | `CLOCK_DATE` | `%a %d.%m.` | the date; empty for none |
-| `CLOCK_FONT` | `Sans 10` | the date's Pango font, as `DC_FONT` and `SC_FONT` of the sisters; its size sets the window's height, the time is the same font, larger |
 | `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background, border with the keyboard |
 | `LC_TIME`, `TZ` | | names of days and months, the zone |
 
@@ -85,16 +86,16 @@ tests. What is open is written down in CAVEATS.
 
     make test
 
-runs digitalClock in the dock of a headless mwc beside deskControl and pulseControl
-and checks in screenshots its border and focus, the height against both, the digits,
-the date and its contrast, that it ticks, a format with letters, the colours it reads
-from the environment and the mwmrc, the keys, the cursor and sharpness on a scaled
-output, `-v` and `-h`. It needs a built
-mwc with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default
+runs digitalClock in the dock of a headless mwc beside deskControl, pulseControl and
+osDisplay and checks in screenshots its border and focus, the height against theirs, the
+digits, the date and its contrast, that it ticks, a format with letters, the colours it
+reads from the environment and the mwmrc, the keys, the cursor and sharpness on a
+scaled output, the warning without DejaVu Sans, `-v` and `-h`. It needs a built mwc
+with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default
 `../mwc`), grim, and the sisters built next to this directory; without them set
 `SKIP_SISTERS=1`. mwc's development box has all of it:
 
-    distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/mClock && make test'
+    distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/digitalClock && make test'
 
 The log is in `build/ui.log`, the clock's own in `build/ui-digitalClock.log`, the
 sisters' in `build/ui-sisters.log`, its protocol log on a scaled output in

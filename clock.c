@@ -4,9 +4,9 @@
  *
  * libwayland, xkbcommon, Pango and Cairo, one file, no toolkit. The time sits in a
  * sunken field, its digits as high as the field allows, the date below it in the
- * font of the sister tools' labels, dimmed. The window is as high as
- * pulseControl and deskControl with the same font, so the three line up in mwc's
- * dock. It reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE from the
+ * font of the sister tools' labels, dimmed. The font is fixed, DejaVu Sans 10, as
+ * in pulseControl, deskControl and osDisplay, so the window is as high as theirs and
+ * the four line up in mwc's dock. It reads the same colours as mwc: MWC_INACTIVE / MWC_ACTIVE from the
  * environment, else Mwm*background and Mwm*activeBackground from
  * ~/.config/mwc/mwmrc, else the Motif defaults. The text is Mwm*foreground, else
  * black or white, whichever reads better.
@@ -126,7 +126,7 @@ static uint32_t px_bg, px_top, px_bot, px_sel;
 static uint32_t xc_fg, xc_dim;
 static cairo_t *cr;             /* what fill, bevel and text draw on */
 static PangoLayout *plo;        /* the digits */
-static PangoLayout *plo_date;   /* the date, in the font as given */
+static PangoLayout *plo_date;   /* the date, in the dock's font */
 static int barh;                /* a button's height in the sister tools */
 static int date_h;              /* the date's digits and the gap, 0 without one */
 static int ink_y, ink_h;        /* where the time's ink can be in its line */
@@ -360,6 +360,35 @@ static uint32_t setting(const char *env, const char *res, uint32_t def)
 	return def;
 }
 
+/* The dock's font, the same in deskControl, pulseControl, osDisplay and here, and
+ * fixed, so that the four are always as high as each other. */
+#define DOCK_FONT_FAMILY "DejaVu Sans"
+#define DOCK_FONT_SIZE 10       /* points */
+
+static PangoFontDescription *dock_font(PangoContext *pctx)
+{
+	PangoFontDescription *d = pango_font_description_new();
+	pango_font_description_set_family(d, DOCK_FONT_FAMILY);
+	pango_font_description_set_style(d, PANGO_STYLE_NORMAL);
+	pango_font_description_set_variant(d, PANGO_VARIANT_NORMAL);
+	pango_font_description_set_weight(d, PANGO_WEIGHT_NORMAL);
+	pango_font_description_set_stretch(d, PANGO_STRETCH_NORMAL);
+	pango_font_description_set_size(d, DOCK_FONT_SIZE * PANGO_SCALE);
+	/* Without it fontconfig quietly takes another font, and the dock may not line
+	 * up; say so. */
+	PangoFont *pf = pango_context_load_font(pctx, d);
+	PangoFontDescription *got = pf ? pango_font_describe(pf) : NULL;
+	const char *fam = got ? pango_font_description_get_family(got) : NULL;
+	if (!fam || g_ascii_strcasecmp(fam, DOCK_FONT_FAMILY))
+		fprintf(stderr, "digitalClock: font %s not found, using %s\n",
+			DOCK_FONT_FAMILY, fam ? fam : "none");
+	if (got)
+		pango_font_description_free(got);
+	if (pf)
+		g_object_unref(pf);
+	return d;
+}
+
 /* The height comes from the font as in pulseControl and deskControl: two of their
  * rows and the gap between. The time is in the same font, as large as that height
  * allows beside the date line. A time of digits is measured by their ink; one with
@@ -378,14 +407,9 @@ static void theme_init(void)
 		xc_fg = contrast(bg);
 	xc_dim = dimmed(bg, xc_fg);
 
-	const char *f = getenv("CLOCK_FONT");
-	PangoFontDescription *desc =
-		pango_font_description_from_string(f && *f ? f : "Sans 10");
-	/* "Monospace" has no size, and metrics without one are all zero. */
-	if (pango_font_description_get_size(desc) <= 0)
-		pango_font_description_set_size(desc, 10 * PANGO_SCALE);
 	PangoContext *pctx = pango_font_map_create_context(
 		pango_cairo_font_map_get_default());
+	PangoFontDescription *desc = dock_font(pctx);
 	PangoFontMetrics *m = pango_context_get_metrics(pctx, desc, NULL);
 	int asc = PANGO_PIXELS_CEIL(pango_font_metrics_get_ascent(m));
 	int dsc = PANGO_PIXELS_CEIL(pango_font_metrics_get_descent(m));
@@ -1064,7 +1088,7 @@ int main(int argc, char **argv)
 		fprintf(help ? stdout : stderr, "usage: digitalClock [-v]\n"
 			"Environment: CLOCK_FORMAT (default \"%%H:%%M\"), CLOCK_DATE "
 			"(default \"%%a %%d.%%m.\", empty for none),\n"
-			"CLOCK_FONT (default \"Sans 10\"), MWC_INACTIVE, MWC_ACTIVE.\n");
+			"MWC_INACTIVE, MWC_ACTIVE.\n");
 		return help ? 0 : 1;
 	}
 	setlocale(LC_ALL, "");

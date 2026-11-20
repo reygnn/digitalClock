@@ -1,6 +1,7 @@
 #!/bin/bash
 # Black-box test of digitalClock: a headless mwc, the clock in its dock, with
-# deskControl and pulseControl beside it when they are built next to this directory.
+# deskControl, pulseControl and osDisplay beside it when they are built next to this
+# directory.
 # What it shows is read from screenshots. It has its own sockets and touches no
 # running session.
 #
@@ -15,6 +16,7 @@ CK_LOG=$CK_DIR/build/ui-digitalClock.log
 MWC_DIR=${MWC_DIR:-$CK_DIR/../mwc}
 DESK=${DESK:-$CK_DIR/../deskControl/deskControl}
 PULSE=${PULSE:-$CK_DIR/../pulseControl/pulseControl}
+OSD=${OSD:-$CK_DIR/../osDisplay/osDisplay}
 SKIP_SISTERS=${SKIP_SISTERS:-0}   # lib.sh sets -u
 [ -x "$CK" ] || { echo "FAIL: $CK not built"; exit 1; }
 [ -d "$MWC_DIR" ] || { echo "FAIL: no mwc in $MWC_DIR (set MWC_DIR)"; exit 1; }
@@ -28,8 +30,9 @@ done
 
 export MWC_TEST_STATE=$SMOKE_DIR/state
 export LC_ALL=C.UTF-8
-unset MWC_INACTIVE MWC_ACTIVE CLOCK_FONT CLOCK_FORMAT CLOCK_DATE DC_FONT SC_FONT \
-	PULSE_SERVER
+unset MWC_INACTIVE MWC_ACTIVE CLOCK_FORMAT CLOCK_DATE PULSE_SERVER
+# The dock's font is fixed: the variables that once set it are ignored by all four.
+export CLOCK_FONT="Sans 20" DC_FONT="Sans 20" SC_FONT="Sans 20" OSD_FONT="Sans 20"
 SISTERS_LOG=$CK_DIR/build/ui-sisters.log
 : >"$CK_LOG"
 : >"$SISTERS_LOG"
@@ -44,7 +47,8 @@ IN=$((3 + 6 + 2))       # frame, padding, the field's bevel
 
 mkdir -p "$XDG_CONFIG_HOME/mwc"
 printf '%s\n' 'Mwm*digitalClock*dock: true' 'Mwm*deskControl*dock: true' \
-	'Mwm*pulseControl*dock: true' 'Mwm*dockPlacement: right bottom' \
+	'Mwm*pulseControl*dock: true' 'Mwm*osDisplay*dock: true' \
+	'Mwm*dockPlacement: right bottom' \
 	>"$XDG_CONFIG_HOME/mwc/mwmrc"
 start_mwc 'exec sleep 300'
 start_vinput
@@ -102,9 +106,9 @@ echo "ok: no server-side decoration"
 check "it is on every desktop, as a docked window" \
 	"[ \"\$(get digitalClock everywhere)\" = 1 ]"
 
-# As high as its sisters, with the same default font: the point of its layout.
+# As high as its sisters, with the same fixed font: the point of its layout.
 PIDS_sisters=
-for sister in "$DESK" "$PULSE"; do
+for sister in "$DESK" "$PULSE" "$OSD"; do
 	name=$(basename "$sister")
 	if [ ! -x "$sister" ]; then
 		[ "$SKIP_SISTERS" = 1 ] || fail "$sister not built (or SKIP_SISTERS=1)"
@@ -406,6 +410,22 @@ for a in "-v junk" "-h junk" "--help" "-x"; do
 	"$CK" $a >/dev/null 2>&1 && fail "$a: exit 0"
 	echo "ok: $a is refused"
 done
+
+# Without DejaVu Sans fontconfig takes another font; the clock says so.
+FC_DIR=$SMOKE_DIR/fc
+mkdir -p "$FC_DIR/fonts"
+cp "$(fc-match -f '%{file}' 'DejaVu Sans Mono')" "$FC_DIR/fonts/"
+printf '<?xml version="1.0"?>\n<fontconfig><dir>%s</dir><cachedir>%s</cachedir></fontconfig>\n' \
+	"$FC_DIR/fonts" "$FC_DIR/cache" >"$FC_DIR/fonts.conf"
+FC_LOG=$SMOKE_DIR/fc.log
+FONTCONFIG_FILE=$FC_DIR/fonts.conf WAYLAND_DISPLAY=wayland-0 "$CK" >"$FC_LOG" 2>&1 &
+PID_fc=$!
+check "it warns without DejaVu Sans" \
+	"grep -q '^digitalClock: font DejaVu Sans not found, using DejaVu Sans Mono\$' \"$FC_LOG\""
+kill "$PID_fc"
+wait "$PID_fc" 2>/dev/null
+grep -q 'not found' "$CK_LOG" && fail "the font is missing in the test: $(grep 'not found' "$CK_LOG")"
+echo "ok: DejaVu Sans is there for the rest"
 
 for p in $PIDS_sisters; do
 	kill "$p" 2>/dev/null
