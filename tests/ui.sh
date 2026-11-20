@@ -6,8 +6,8 @@
 # running session.
 #
 # Needs a built mwc with build/vinput, build/pngtool and build/xdgc in MWC_DIR (by
-# default ../mwc), grim, and the sisters built next to this directory (or
-# SKIP_SISTERS=1). Output goes to build/ui.log, digitalClock's own to
+# default ../mwc), grim, the Adwaita cursor theme, and the sisters built next to
+# this directory (or SKIP_SISTERS=1). Output goes to build/ui.log, digitalClock's own to
 # build/ui-digitalClock.log, the sisters' to build/ui-sisters.log.
 CK_DIR=$(cd "$(dirname "$0")/.." && pwd)
 CK=${CK:-$CK_DIR/digitalClock}
@@ -30,7 +30,14 @@ done
 
 export MWC_TEST_STATE=$SMOKE_DIR/state
 export LC_ALL=C.UTF-8
-unset MWC_INACTIVE MWC_ACTIVE CLOCK_FORMAT CLOCK_DATE PULSE_SERVER
+unset MWC_INACTIVE MWC_ACTIVE CLOCK_FORMAT CLOCK_DATE PULSE_SERVER XCURSOR_PATH
+# The cursor checks count on Adwaita's sizes. Without it wayland-cursor takes its
+# built-in cursor and they fail far from the cause; say it here.
+for d in "$HOME/.local/share/icons" "$HOME/.icons" /usr/share/icons /usr/share/pixmaps; do
+	[ -d "$d/Adwaita/cursors" ] && break
+	d=
+done
+[ -n "$d" ] || { echo "FAIL: no Adwaita cursor theme (adwaita-icon-theme)"; exit 1; }
 # The dock's font is fixed: the variables that once set it are ignored by all four.
 export CLOCK_FONT="Sans 20" DC_FONT="Sans 20" SC_FONT="Sans 20" OSD_FONT="Sans 20"
 SISTERS_LOG=$CK_DIR/build/ui-sisters.log

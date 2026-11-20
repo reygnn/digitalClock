@@ -97,8 +97,8 @@ digits, the date and its contrast, that it ticks, a format with letters, the col
 reads from the environment and the mwmrc, the keys, the cursor and sharpness on a
 scaled output, the warning without DejaVu Sans, `-v` and `-h`. It needs a built mwc
 with `build/vinput`, `build/pngtool` and `build/xdgc` in `MWC_DIR` (by default
-`../mwc`), grim, and the sisters built next to this directory; without them set
-`SKIP_SISTERS=1`. mwc's development box has all of it:
+`../mwc`), grim, the Adwaita cursor theme, and the sisters built next to this
+directory; without them set `SKIP_SISTERS=1`. mwc's development box has all of it:
 
     distrobox enter mwc-dev -- bash -lc 'cd ~/data/C-Projects/digitalClock && make test'
 
