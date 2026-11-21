@@ -480,6 +480,19 @@ wait "$PID_fc" 2>/dev/null
 grep -q 'not found' "$CK_LOG" && fail "the font is missing in the test: $(grep 'not found' "$CK_LOG")"
 echo "ok: DejaVu Sans is there for the rest"
 
+# ---- a layout without Latin letters ------------------------------------------------
+# q and Ctrl+Q are the key that is Q in the first Latin layout, as Qt reads it.
+stop_vinput
+start_vinput 1280 720 ru,us
+for k in q ctrl+q; do
+	start_clock
+	do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
+	do_input click left
+	check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
+	quit_clock "$k"
+	echo "ok: $k quits in a Russian layout"
+done
+
 for p in $PIDS_sisters; do
 	kill "$p" 2>/dev/null
 	wait "$p" 2>/dev/null
