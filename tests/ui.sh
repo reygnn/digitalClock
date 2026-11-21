@@ -450,7 +450,13 @@ kill -0 "$PID_ck" 2>/dev/null || fail "digitalClock died at scale 4"
 kill "$PID_ck"
 wait "$PID_ck" 2>/dev/null
 
-VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\(.*\)"/\1/p' "$CK_DIR/version.h")
+# The version from version.h, then the commit the build is from where git knows it.
+VERSION=$(sed -n 's/^#define DIGITALCLOCK_VERSION "\([^"]*\)".*/\1/p' "$CK_DIR/version.h")
+if commit=$(TZ=UTC0 git -C "$CK_DIR" log -1 --format=%cd.%h \
+		--date=format-local:%Y%m%d.%H%M 2>/dev/null); then
+	git -C "$CK_DIR" diff --quiet HEAD || commit=$commit.dirty
+	VERSION=$VERSION+$commit
+fi
 [ "$("$CK" -v)" = "digitalClock $VERSION" ] || fail "-v: $("$CK" -v)"
 echo "ok: -v prints the version"
 out=$("$CK" -h 2>/dev/null) || fail "-h: exit $?"

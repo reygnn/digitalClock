@@ -15,7 +15,7 @@ CFLAGS ?= -O2 -g
 MODS = timefmt.c
 MODS_H = timefmt.h
 
-digitalClock: clock.c $(MODS) $(MODS_H) version.h $(MTK_DEPS)
+digitalClock: clock.c $(MODS) $(MODS_H) version.h build/gitversion.h $(MTK_DEPS)
 	$(CC) $(MTK_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ clock.c $(MODS) \
 		$(MTK_SRC) $(MTK_LIBS) $(LDLIBS)
 
@@ -36,6 +36,17 @@ check: $(UNITS)
 build:
 	mkdir -p build
 
+# The commit a build is from, after the version: +DATE.TIME.HASH, its commit time in
+# UTC, and .dirty for changes not committed. Rewritten only when it changes, so
+# digitalClock is linked again only then; empty without git.
+build/gitversion.h: FORCE | build
+	@v=$$(TZ=UTC0 git log -1 --format=%cd.%h --date=format-local:%Y%m%d.%H%M 2>/dev/null); \
+	if [ -n "$$v" ] && ! git diff --quiet HEAD 2>/dev/null; then v=$$v.dirty; fi; \
+	line="#define DIGITALCLOCK_GIT \"$${v:++$$v}\""; \
+	[ "$$(cat $@ 2>/dev/null)" = "$$line" ] || echo "$$line" >$@
+
+FORCE:
+
 install: digitalClock
 	install -Dm755 digitalClock $(DESTDIR)$(PREFIX)/bin/digitalClock
 	install -d $(DESTDIR)$(PREFIX)/share/applications
@@ -55,4 +66,4 @@ test: digitalClock
 clean:
 	rm -rf digitalClock build
 
-.PHONY: all install uninstall check test clean
+.PHONY: all install uninstall check test clean FORCE
