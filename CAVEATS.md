@@ -39,3 +39,11 @@ show the old time for one frame.
 
 It keeps the first eight seats the compositor announces. One beyond that is taken
 only if it is announced again after the others went.
+
+
+## Colours
+
+Without `Mwm*foreground` the text is black or white by Motif's rule, as mwc's titles.
+On a mid-tone that can fall short of WCAG's 4.5:1: on mwc's activeBackground
+`#7387ad` the text is white at about 3.8:1, and the date, which can't be dimmed
+there, as white as the time.

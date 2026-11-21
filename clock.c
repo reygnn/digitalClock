@@ -10,7 +10,7 @@
  * the four line up in mwc's dock. Its colours are mwc's: MWC_INACTIVE /
  * MWC_ACTIVE from the environment, else Mwm*background and Mwm*activeBackground
  * from ~/.config/mwc/mwmrc, else the Motif defaults. The text is Mwm*foreground,
- * else black or white, whichever reads better.
+ * else black or white as Motif picks it, as mwc's titles.
  *
  * It asks for no server-side decoration and draws only mwm's thin border, which
  * takes the active colour while it has the keyboard, as mwc's frames do.
@@ -75,11 +75,10 @@ static int text_w;              /* the widest text so far: the field never shrin
 static void theme_init(void)
 {
 	mtk_theme_load(&theme);
-	/* Text as before mtk: the resource if set, else black or white by WCAG. It is
-	 * always on the background: the active colour is only the border's. */
-	uint32_t bg = theme.inactive.bg;
-	xc_fg = theme.has_fg ? theme.inactive.fg : mtk_best_contrast(bg);
-	xc_dim = mtk_dimmed(bg, xc_fg);
+	/* The text is always on the background: the active colour is only the
+	 * border's. */
+	xc_fg = theme.inactive.fg;
+	xc_dim = theme.dim;
 
 	PangoFontDescription *desc = mtk_dock_font("digitalClock");
 	plo_date = mtk_layout_new(desc);

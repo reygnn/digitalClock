@@ -49,7 +49,6 @@ BG=aeb2c3      # Motif's default background: the frame without the keyboard
 SEL=7387ad     # activeBackground: the frame with the keyboard
 INK=000000     # the digits on Motif's default background
 DIM=3d3e44     # the date: dimmed towards the ink as far as WCAG AA's 4.5:1 allows
-SEL_DIM=171b23 # ... and on activeBackground, where that takes more
 IN=$((3 + 6 + 2))       # frame, padding, the field's bevel
 
 mkdir -p "$XDG_CONFIG_HOME/mwc"
@@ -222,22 +221,21 @@ echo "ok: and it quits"
 
 # ---- contrast ----------------------------------------------------------------------------
 
-# On a mid-tone such as mwc's activeBackground black reads better than white: the
-# digits are black and nothing in the field is white. The date is darker than on
-# the default background, to keep 4.5:1.
+# On mwc's activeBackground Motif picks white text, as mwc does for its titles: the
+# digits are white and nothing in the field is black. White has less than 4.5:1
+# there, so the date can't be dimmed and is white too.
 MWC_INACTIVE="#$SEL" CLOCK_FORMAT=%H:%M start_clock
 for ((i = 0; i < 30; i++)); do
-	# The date's 171b23 is within count's tolerance of black: the time alone.
-	shoot && n=$(time_ink $INK 6) &&
-		white=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) ffffff) &&
-		date=$(strip $SEL_DIM $DATE_TOL) &&
-		[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && [ "${date:-0}" -gt 8 ] && break
+	shoot && n=$(time_ink ffffff 6) &&
+		black=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) $INK) &&
+		date=$(strip ffffff $DATE_TOL) &&
+		[ "${n:-0}" -gt 50 ] && [ "$black" = 0 ] && [ "${date:-0}" -gt 8 ] && break
 	sleep 0.1
 done
-[ "${n:-0}" -gt 50 ] && [ "$white" = 0 ] && [ "${date:-0}" -gt 8 ] ||
+[ "${n:-0}" -gt 50 ] && [ "$black" = 0 ] && [ "${date:-0}" -gt 8 ] ||
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
-	  fail "on $SEL: $n black, $white white, $date $SEL_DIM pixels"; }
-echo "ok: black digits on a mid-tone, the date in $SEL_DIM"
+	  fail "on $SEL: $n white, $black black, $date white date pixels"; }
+echo "ok: white digits and date on activeBackground, as Motif picks"
 do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
 do_input click left
 check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"

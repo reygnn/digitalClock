@@ -50,7 +50,7 @@ It draws only mwm's thin border, no title bar, buttons or resize handles. The bo
 takes the active colour while the clock has the keyboard. The colours are mwc's:
 `MWC_INACTIVE` and `MWC_ACTIVE` from the environment, else `Mwm*background` and
 `Mwm*activeBackground` from the mwmrc, else the Motif defaults. The text is
-`Mwm*foreground`, else black or white, whichever reads better on the background.
+`Mwm*foreground`, else black or white as Motif picks it, as mwc does for its titles.
 
 The display changes on the full second, and at once when the system clock is set or
 the machine resumes.
