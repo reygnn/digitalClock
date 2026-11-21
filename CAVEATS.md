@@ -43,7 +43,7 @@ only if it is announced again after the others went.
 
 ## Colours
 
-Without `Mwm*foreground` the text is black or white by Motif's rule, as mwc's titles.
-On a mid-tone that can fall short of WCAG's 4.5:1: on mwc's activeBackground
-`#7387ad` the text is white at about 3.8:1, and the date, which can't be dimmed
-there, as white as the time.
+Without `Mwm*foreground` the text is black or white by Motif's rule, as mwc's titles;
+on mwc's built-in grey black, as mwc has it. On a mid-tone set as the background that
+can fall short of WCAG's 4.5:1: on Motif's old focused blue `#7387ad` the text is
+white at about 3.6:1, and the date, which can't be dimmed there, as white as the time.

@@ -71,7 +71,7 @@ With Alt or Super held no key acts.
 |---|---|---|
 | `CLOCK_FORMAT` | `%H:%M` | the time, as for `strftime`, e.g. `%H:%M:%S`; with letters it is sized for their accents and descenders |
 | `CLOCK_DATE` | `%a %d.%m.` | the date; empty for none |
-| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aeb2c3`, `#7387ad` | background, border with the keyboard |
+| `MWC_INACTIVE`, `MWC_ACTIVE` | `#aaaaaa`, `#c6c1aa` | background, border with the keyboard |
 | `LC_TIME`, `TZ` | | names of days and months, the zone |
 
 

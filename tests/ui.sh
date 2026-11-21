@@ -45,10 +45,10 @@ SISTERS_LOG=$CK_DIR/build/ui-sisters.log
 : >"$SISTERS_LOG"
 SHOT=$SMOKE_DIR/ui.png
 ERR_SHOT=$CK_DIR/build/ui-last.png
-BG=aeb2c3      # Motif's default background: the frame without the keyboard
-SEL=7387ad     # activeBackground: the frame with the keyboard
+BG=aaaaaa      # mwc's default background, IRIX Base: the frame without the keyboard
+SEL=c6c1aa     # activeBackground: the frame with the keyboard
 INK=000000     # the digits on Motif's default background
-DIM=3d3e44     # the date: dimmed towards the ink as far as WCAG AA's 4.5:1 allows
+DIM=3c3c3c     # the date: dimmed towards the ink as far as WCAG AA's 4.5:1 allows
 IN=$((3 + 6 + 2))       # frame, padding, the field's bevel
 
 mkdir -p "$XDG_CONFIG_HOME/mwc"
@@ -142,8 +142,9 @@ done
 [ "${first:-0}" -gt 50 ] ||
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "no digits: $first ink pixels"; }
 echo "ok: digits in the field ($first ink pixels)"
-# The date below them, dimmed: grey in its strip, and none of the digits' black.
-date=$(strip $DIM $DATE_TOL) black=$(strip $INK)
+# The date below them, dimmed: grey in its strip, and none of the digits' black. Its
+# 3c3c3c is within count's tolerance of black, so black is counted closer.
+date=$(strip $DIM $DATE_TOL) black=$(strip $INK 40)
 [ "${date:-0}" -gt 8 ] && [ "${black:-1}" = 0 ] ||
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null; fail "the date strip: $date grey, $black black pixels"; }
 echo "ok: the date below the time ($date pixels)"
@@ -208,7 +209,7 @@ done
 # The field's top rows inside its bevel, where the text is clipped: an accent cut
 # off there would leave ink, so they are all face. And the date's strip.
 top=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) 2 $BG)
-black=$(strip $INK)
+black=$(strip $INK 40)          # not the date's 3c3c3c
 [ "$top" = $((2 * (CW - 2 * IN))) ] && [ "$black" = 0 ] ||
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
 	  fail "letters: $top of $((2 * (CW - 2 * IN))) face pixels at the top, $black on the date"; }
@@ -221,10 +222,11 @@ echo "ok: and it quits"
 
 # ---- contrast ----------------------------------------------------------------------------
 
-# On mwc's activeBackground Motif picks white text, as mwc does for its titles: the
-# digits are white and nothing in the field is black. White has less than 4.5:1
-# there, so the date can't be dimmed and is white too.
-MWC_INACTIVE="#$SEL" CLOCK_FORMAT=%H:%M start_clock
+# On a mid-tone such as Motif's old focused blue Motif picks white text, as mwc does
+# for its titles: the digits are white and nothing in the field is black. White has
+# less than 4.5:1 there, so the date can't be dimmed and is white too.
+MID=7387ad     # Motif's old focused blue, at 55 %
+MWC_INACTIVE="#$MID" CLOCK_FORMAT=%H:%M start_clock
 for ((i = 0; i < 30; i++)); do
 	shoot && n=$(time_ink ffffff 6) &&
 		black=$(count $((X0 + IN)) $((Y0 + IN)) $((CW - 2 * IN)) $((CH - 2 * IN)) $INK) &&
@@ -234,8 +236,8 @@ for ((i = 0; i < 30; i++)); do
 done
 [ "${n:-0}" -gt 50 ] && [ "$black" = 0 ] && [ "${date:-0}" -gt 8 ] ||
 	{ cp "$SHOT" "$ERR_SHOT" 2>/dev/null
-	  fail "on $SEL: $n white, $black black, $date white date pixels"; }
-echo "ok: white digits and date on activeBackground, as Motif picks"
+	  fail "on $MID: $n white, $black black, $date white date pixels"; }
+echo "ok: white digits and date on $MID, as Motif picks"
 do_input move $((X0 + CW / 2)) $((Y0 + CH / 2))
 do_input click left
 check "it has the focus" "[ \"\$(get digitalClock kbfocus)\" = 1 ]"
